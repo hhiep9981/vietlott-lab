@@ -7,7 +7,12 @@ from src.config import GAMES, keno_game, with_jackpots
 from src.data.loader import load_draws
 from src.pipelines.backtest import run_backtest
 from src.pipelines.report import build, render_html
-from src.pipelines.suggest import keno_suggest, suggest, value_summary
+from src.pipelines.suggest import (
+    keno_suggest,
+    suggest,
+    suggest_unseen_pool,
+    value_summary,
+)
 from src.analysis.randomness import run_all
 
 
@@ -34,9 +39,14 @@ def main() -> None:
 
     s = sub.add_parser("suggest", help="suggest tickets")
     s.add_argument("game", choices=list(GAMES))
-    s.add_argument("-n", type=int, default=5)
+    s.add_argument("-n", type=int, help="tickets (default 5; 10 with --unseen)")
     s.add_argument("--seed", type=int)
     s.add_argument("--spot", type=int, help="Keno spot level (default: best RTP)")
+    s.add_argument(
+        "--unseen",
+        action="store_true",
+        help="never-drawn pool + sum/odd/low/spacing rules, 4 hot/4 cold/2 balanced",
+    )
 
     a = p.parse_args()
     if a.cmd == "dashboard":
@@ -57,8 +67,19 @@ def main() -> None:
         for r in run_all(load_draws(GAMES[a.game])):
             print(f"{r['test']:<55} p={r['p_value']:.4f}  {r['detail']}")
     elif a.cmd == "suggest":
+        a.n = a.n or (10 if a.unseen else 5)
         if a.game == "keno":
             print(json.dumps(keno_suggest(a.n, a.spot, a.seed), indent=2))
+            return
+        if a.unseen:
+            res = suggest_unseen_pool(load_draws(GAMES[a.game]), a.n, a.seed)
+            print(json.dumps(res["rules"]), f"pool={res['pool_size']:,}")
+            for t in res["tickets"]:
+                sp = f" | special {t['special']}" if t["special"] else ""
+                print(
+                    f"{t['mode']:<9}{t['numbers']}{sp}  sum={t['sum']} "
+                    f"(z={t['sum_z']:+.2f}) gaps={t['gaps']} freq_z={t['mean_freq_z']:+.2f}"
+                )
             return
         print(json.dumps(value_summary(GAMES[a.game]), indent=2))
         for t in suggest(load_draws(GAMES[a.game]), a.n, seed=a.seed):

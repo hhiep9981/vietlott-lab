@@ -29,6 +29,8 @@ Lotto 5/35, Keno**.
     78 bn (6/45), 35.8 bn (5/35).
   - **Anti-popular tickets**: same win probability, less chance of sharing a
     jackpot. Used by the suggester.
+- Unseen-pool method (never-drawn combos + normal sum band + spacing rules +
+  hot/cold/balanced weighting): no lift vs random in walk-forward backtest.
 
 ## Stack
 Python 3.12 (`.venv`, uv) · polars · numpy · scipy · pytest ·
@@ -49,6 +51,7 @@ Read-only from `vietlott-data/data/*.jsonl` (upstream clone — never edited).
 .venv/bin/python -m src.main backtest power655 --tickets 30
 .venv/bin/python -m src.main test power535
 .venv/bin/python -m src.main suggest power655 -n 6
+.venv/bin/python -m src.main suggest power655 --unseen   # 10 never-drawn tickets
 .venv/bin/python -m src.main suggest keno -n 5
 .venv/bin/python -m pytest tests -q
 ```

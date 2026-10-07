@@ -9,7 +9,8 @@ Lottery/
 │   ├── data/loader.py      jsonl -> Draws (numpy)
 │   ├── models/
 │   │   ├── prizes.py       exact odds, EV/RTP, ticket scoring
-│   │   └── strategies.py   9 online walk-forward strategies
+│   │   ├── strategies.py   9 online walk-forward strategies
+│   │   └── unseen_pool.py  never-drawn pool + distribution rules strategy
 │   ├── analysis/
 │   │   ├── randomness.py   statistical test battery
 │   │   └── descriptive.py  dashboard statistics
@@ -75,6 +76,19 @@ Design notes
 | `Strategy.tickets` | `(rng, n) -> np.ndarray` | Sample n tickets (1-based) | `#predict` |
 | Classes | `RandomStrategy, HotStrategy, ColdStrategy, NotRepeatStrategy, ExpDecayStrategy, LongAbsenceStrategy, MarkovStrategy, PairFrequencyStrategy, PatternStrategy` | Ports of upstream strategies | `#ml` |
 
+### src/models/unseen_pool.py
+| Function | Signature | Purpose | Tags |
+|----------|-----------|---------|------|
+| `mode_weights` | `(z: np.ndarray, mode: str, strength=1.0) -> np.ndarray` | hot / cold / balanced weights from frequency z | `#predict` |
+| `split_modes` | `(n: int, split=DEFAULT_SPLIT) -> list[str]` | Allocate tickets to modes (10 -> 4/4/2) | `#predict` |
+| `central_values` | `(probs: np.ndarray, mass=0.8) -> np.ndarray` | Most likely values covering `mass` | `#eval` |
+| `theoretical_shape` | `(game, sum_conf=0.8) -> tuple` | Normal sum band, allowed odd/low counts | `#eval` |
+| `UnseenPoolStrategy.rules` | `() -> ShapeRules` | Sum/odd/low + spacing percentiles (online) | `#validate` |
+| `UnseenPoolStrategy.frequency_z` | `() -> np.ndarray` | Mean of all-time and recent z-scores | `#transform` |
+| `UnseenPoolStrategy.passes` | `(tickets, rules) -> np.ndarray` | Vectorised rule check | `#validate` |
+| `UnseenPoolStrategy.tickets` | `(rng, n) -> np.ndarray` | Never-drawn, rule-passing, diversified tickets | `#predict` |
+| `UnseenPoolStrategy.describe` | `(ticket) -> dict` | Per-ticket diagnostics | `#eval` |
+
 ### src/analysis/randomness.py
 | Function | Signature | Purpose | Tags |
 |----------|-----------|---------|------|
@@ -117,6 +131,7 @@ Design notes
 |----------|-----------|---------|------|
 | `popularity` | `(ticket, game, last, history) -> (float, list[str])` | Heuristic popularity score | `#predict` |
 | `suggest` | `(draws, n=5, max_overlap=None, strategy=None, n_candidates=50000, seed=None) -> list[Suggestion]` | Anti-popular, diversified tickets | `#predict` |
+| `suggest_unseen_pool` | `(draws, n=10, seed=None) -> dict` | 10 never-drawn tickets (4 hot / 4 cold / 2 balanced) + rules | `#predict` |
 | `keno_suggest` | `(n=5, spot=None, seed=None) -> dict` | Best-RTP spot + random tickets | `#predict` |
 | `breakeven_jackpot` | `(game) -> float \| None` | Jackpot where RTP = 100% | `#eval` |
 | `value_summary` | `(game) -> dict` | RTP / break-even summary | `#eval` |

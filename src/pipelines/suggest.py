@@ -16,6 +16,7 @@ Keno has fixed prizes (no sharing), so only the spot level matters there.
 """
 
 from dataclasses import dataclass
+from math import comb
 
 import numpy as np
 from scipy.optimize import brentq
@@ -24,6 +25,7 @@ from src.config import SEED, GameConfig
 from src.data.loader import Draws
 from src.models.prizes import ev_vs_jackpot, keno_rtp_table, rtp
 from src.models.strategies import Strategy, weighted_sample
+from src.models.unseen_pool import UnseenPoolStrategy, mode_weights
 
 LUCKY = {6, 8, 9, 39, 68, 79}  # common Vietnamese lucky numbers
 
@@ -149,3 +151,47 @@ def value_summary(game: GameConfig) -> dict:
         "breakeven_jackpot": breakeven_jackpot(game),
     }
 
+
+
+def suggest_unseen_pool(draws: Draws, n: int = 10, seed: int | None = None) -> dict:
+    """Never-drawn tickets filtered by sum/odd/low/spacing rules.
+
+    Split 4 hot / 4 cold / 2 balanced for n=10 (see models.unseen_pool).
+    """
+    game = draws.game
+    rng = np.random.default_rng(SEED if seed is None else seed)
+    strat = UnseenPoolStrategy(game)
+    for row in draws.onehot:
+        strat.update(row)
+    tickets = strat.tickets(rng, n)
+    rules = strat.rules()
+
+    if game.special == "separate":
+        s = draws.special[draws.special > 0]
+        counts = np.bincount(s, minlength=game.special_pool + 1)[1:]
+        p = 1 / game.special_pool
+        special_z = (counts - len(s) * p) / np.sqrt(len(s) * p * (1 - p))
+
+    rows = []
+    for t, mode in zip(tickets, strat.last_modes):
+        sp = None
+        if game.special == "separate":
+            sp = int(rng.choice(game.special_pool, p=mode_weights(special_z, mode)))
+            sp += 1
+        rows.append(
+            {"numbers": t.tolist(), "special": sp, "mode": mode, **strat.describe(t)}
+        )
+    return {
+        "pool_size": comb(game.pool, game.pick) - len(strat.history),
+        "excluded": len(strat.history),
+        "rules": {
+            "sum_lo": round(float(rules.sum_lo), 1),
+            "sum_hi": round(float(rules.sum_hi), 1),
+            "odd_ok": rules.odd_ok.tolist(),
+            "low_ok": rules.low_ok.tolist(),
+            "low_max": game.pool // 2,
+            "max_gap": rules.max_gap,
+            "max_adjacent": rules.max_adjacent,
+        },
+        "tickets": rows,
+    }

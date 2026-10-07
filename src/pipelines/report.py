@@ -13,7 +13,14 @@ from src.config import GAMES, OUTPUT_DIR, GameConfig, keno_game
 from src.data.loader import load_draws
 from src.models.prizes import ev_vs_jackpot, prize_tiers
 from src.pipelines.backtest import run_backtest
-from src.pipelines.suggest import keno_suggest, suggest, value_summary
+from src.models.strategies import ALL_STRATEGIES
+from src.models.unseen_pool import UnseenPoolStrategy
+from src.pipelines.suggest import (
+    keno_suggest,
+    suggest,
+    suggest_unseen_pool,
+    value_summary,
+)
 from src.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -59,7 +66,10 @@ def analyse_game(key: str, n_suggest: int = 6, run_bt: bool = True) -> dict:
     bt_draws = load_draws(bt_game) if key == "keno" else draws
     n_tickets, max_eval = BACKTEST_SETTINGS[key]
     if run_bt:
-        results = run_backtest(bt_draws, n_tickets=n_tickets, max_eval=max_eval)
+        strategies = ALL_STRATEGIES + ([] if key == "keno" else [UnseenPoolStrategy])
+        results = run_backtest(
+            bt_draws, n_tickets=n_tickets, max_eval=max_eval, strategies=strategies
+        )
         out["backtest"] = {
             "game": bt_game.name,
             "results": [r.to_dict() for r in results],
@@ -68,6 +78,7 @@ def analyse_game(key: str, n_suggest: int = 6, run_bt: bool = True) -> dict:
         out["suggest"] = keno_suggest(n_suggest)
     else:
         out["suggest"] = {"tickets": [asdict(s) for s in suggest(draws, n_suggest)]}
+        out["unseen_pool"] = suggest_unseen_pool(draws, n=10)
         out["value"]["ev_curve"] = ev_curve(game)
         out["value"]["tiers"] = prize_tiers(game)
     return out

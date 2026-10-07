@@ -18,6 +18,17 @@ Done
   `vietlott-data/`, `Knowledge/` (copyrighted PDFs), `.venv`, `.claude/`.
   To update the site: rebuild dashboard, commit `outputs/`, push.
 
+## 2026-10-07 — Session 1b: unseen-pool method
+- New `UnseenPoolStrategy` (src/models/unseen_pool.py): pool excludes exact
+  past combinations; filters: sum in central 80% normal band, odd/low counts
+  in most likely values, max in-ticket gap <= hist. P95, adjacent pairs <=
+  hist. P90; frequency weighting 4 hot / 4 cold / 2 balanced.
+- `suggest_unseen_pool` + CLI `suggest <game> --unseen` + dashboard section
+  (6/55, 6/45, 5/35; Keno excluded).
+- Walk-forward backtest (30 tickets/draw): lift +0.29% (6/55), +0.17%
+  (6/45), -0.53% (5/35); all CIs include 0 -> no better than random.
+- 28 tests passing.
+
 Next / ideas
 - Add historical jackpot values (if a source is found) → "play only when
   jackpot ≥ break-even" backtest, and jackpot-sharing estimates.

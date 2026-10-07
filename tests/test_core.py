@@ -131,3 +131,48 @@ def test_popularity_penalises_patterns():
     pattern, _ = popularity(np.array([5, 10, 15, 20, 25, 30]), POWER_655, set(), set())
     spread, _ = popularity(np.array([3, 17, 34, 41, 48, 55]), POWER_655, set(), set())
     assert pattern > spread
+
+
+# --- unseen pool --------------------------------------------------------
+def test_split_modes_4_4_2():
+    from src.models.unseen_pool import split_modes
+
+    m = split_modes(10)
+    assert (m.count("hot"), m.count("cold"), m.count("balanced")) == (4, 4, 2)
+
+
+def test_unseen_pool_tickets_follow_rules():
+    from src.pipelines.suggest import suggest_unseen_pool
+
+    draws = load_draws(POWER_655)
+    res = suggest_unseen_pool(draws, n=10, seed=5)
+    history = {tuple(r.tolist()) for r in draws.main}
+    r = res["rules"]
+    assert len(res["tickets"]) == 10
+    for t in res["tickets"]:
+        nums = t["numbers"]
+        assert tuple(nums) not in history
+        assert r["sum_lo"] <= sum(nums) <= r["sum_hi"]
+        assert t["odd"] in r["odd_ok"] and t["low"] in r["low_ok"]
+        assert max(t["gaps"]) <= r["max_gap"]
+        assert sum(g == 1 for g in t["gaps"]) <= r["max_adjacent"]
+
+
+def test_unseen_pool_excludes_exact_history():
+    from src.models.unseen_pool import UnseenPoolStrategy
+
+    draws = fake_draws(MEGA_645, 300)
+    s = UnseenPoolStrategy(MEGA_645)
+    for row in draws.onehot:
+        s.update(row)
+    t = s.tickets(np.random.default_rng(0), 30)
+    assert not any(tuple(x.tolist()) in s.history for x in t)
+
+
+def test_mode_weights_direction():
+    from src.models.unseen_pool import mode_weights
+
+    z = np.array([-2.0, 0.0, 2.0])
+    assert mode_weights(z, "hot").argmax() == 2
+    assert mode_weights(z, "cold").argmax() == 0
+    assert mode_weights(z, "balanced").argmax() == 1

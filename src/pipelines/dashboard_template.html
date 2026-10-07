@@ -234,6 +234,56 @@ function card(id, title, sub, cls = "", controls = "") {
 const legendInline = (obsLabel = "Quan sát", expLabel = "Kỳ vọng nếu ngẫu nhiên") =>
   `<div class="legend-inline"><span><span class="sw" style="background:var(--series-1)"></span>${obsLabel}</span><span><span class="sw line" style="background:var(--ref)"></span>${expLabel}</span></div>`;
 
+const MODE_LABEL = { hot: "Nóng", cold: "Lạnh", balanced: "Cân bằng" };
+const MODE_NOTE = {
+  hot: "ưu tiên số về nhiều hơn kỳ vọng",
+  cold: "ưu tiên số về ít hơn kỳ vọng",
+  balanced: "ưu tiên số có tần suất sát kỳ vọng",
+};
+function unseenPoolSection(G, bt) {
+  const U = G.unseen_pool;
+  const R = U.rules;
+  const r = bt.find((x) => x.strategy === "Unseen pool");
+  const sign = (v) => (v >= 0 ? "+" : "") + fmt(v, 2);
+  const modes = ["hot", "cold", "balanced"];
+  return `
+  <h2>Pool bộ số chưa từng xuất hiện</h2>
+  <p class="lede">Pool gồm <b>${fmt(U.pool_size)}</b> bộ số (đã loại ${fmt(U.excluded)} bộ từng được quay).
+  Vé được lấy mẫu theo trọng số tần suất rồi lọc theo phân phối chuẩn của tổng và quy tắc khoảng cách.</p>
+  <div class="grid">
+    <div class="card"><h3>Quy tắc lọc</h3>
+      <ul class="facts">
+        <li><b>Tổng</b> trong khoảng ${fmt(R.sum_lo)}–${fmt(R.sum_hi)} (80% giữa của phân phối chuẩn).</li>
+        <li><b>Số lẻ</b>: ${R.odd_ok.join(", ")} số · <b>số nhỏ (≤ ${R.low_max})</b>: ${R.low_ok.join(", ")} số.</li>
+        <li><b>Khoảng cách</b> giữa hai số liền nhau trong vé ≤ ${R.max_gap} (phân vị 95% lịch sử).</li>
+        <li><b>Cặp sát nhau</b> (cách 1) ≤ ${R.max_adjacent} (phân vị 90% lịch sử).</li>
+        <li><b>Tần suất</b>: 4 vé Nóng, 4 vé Lạnh, 2 vé Cân bằng; trùng nhau tối đa ${Math.floor(G.meta.drawn / 2)} số.</li>
+      </ul>
+    </div>
+    <div class="card"><h3>Kiểm chứng (backtest walk-forward)</h3>
+      ${r ? `<p class="sub">${fmt(r.n_draws)} kỳ · ${r.n_tickets} vé/kỳ · cùng giai đoạn với các chiến lược khác.</p>
+      <div class="grid tiles" style="margin-top:8px">
+        ${tile("Lift so với ngẫu nhiên", sign(r.lift_pct) + "%", `CI 95%: ${sign(r.lift_ci95[0])} … ${sign(r.lift_ci95[1])}`)}
+        ${tile("p-value", pval(r.p_value), `Holm: ${pval(r.p_holm)}`)}
+        ${tile("ROI", fmt(r.roi_gross_pct, 1) + "%", `Jackpot: ${r.jackpot_hits}`)}
+      </div>
+      <p class="sub" style="margin-top:10px">${r.p_holm < 0.05 && r.lift_pct > 0 ? "Có ý nghĩa thống kê — cần kiểm chứng thêm trên dữ liệu mới." : "Không khác biệt có ý nghĩa so với chọn ngẫu nhiên: các bộ lọc làm vé “giống” kỳ quay điển hình nhưng không làm tăng xác suất trúng."}</p>` : `<p class="sub">Chưa có kết quả backtest.</p>`}
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="scroll"><table><thead><tr><th>Nhóm</th><th>Bộ số</th><th class="num">Tổng (z)</th><th class="num">Lẻ / Nhỏ</th><th>Khoảng cách</th><th class="num">Tần suất TB (z)</th></tr></thead><tbody>
+    ${modes.map((m) => U.tickets.filter((t) => t.mode === m).map((t, i) => `<tr>
+      <td>${i === 0 ? `<b>${MODE_LABEL[m]}</b><div style="color:var(--muted);font-size:12px">${MODE_NOTE[m]}</div>` : ""}</td>
+      <td><div class="balls">${t.numbers.map((n) => `<span class="ball sm">${n}</span>`).join("")}${t.special ? `<span class="ball sm sp" title="Số đặc biệt">${t.special}</span>` : ""}</div></td>
+      <td class="num">${t.sum} (${sign(t.sum_z)})</td>
+      <td class="num">${t.odd} / ${t.low}</td>
+      <td style="font-variant-numeric:tabular-nums">${t.gaps.join(" · ")}</td>
+      <td class="num" title="${t.freq_z.join(", ")}">${sign(t.mean_freq_z)}</td></tr>`).join("")).join("")}
+    </tbody></table></div>
+    <p class="sub" style="margin-top:8px">Tần suất z: độ lệch tần suất của các số trong vé so với kỳ vọng (trung bình toàn bộ lịch sử và ${fmt(G.frequency.recent_n)} kỳ gần nhất). Rê chuột để xem z từng số.</p>
+  </div>`;
+}
+
 /* ---------------------------------------------------------------- */
 function render(key) {
   charts.splice(0).forEach((c) => c.dispose());
@@ -358,6 +408,8 @@ function render(key) {
   <div class="card">${(isKeno ? G.suggest.tickets.map((t) => ({ numbers: t })) : G.suggest.tickets).map((t, i) => `
     <div class="ticket"><div class="balls">${t.numbers.map((n) => `<span class="ball">${String(n).padStart(2, "0")}</span>`).join("")}${t.special ? `<span class="ball sp" title="Số đặc biệt">${String(t.special).padStart(2, "0")}</span>` : ""}</div>
     <div class="meta">Vé ${i + 1}${t.popularity != null ? ` · điểm phổ biến ${fmt(t.popularity, 1)}` : ""}</div></div>`).join("")}</div>
+
+  ${G.unseen_pool ? unseenPoolSection(G, bt) : ""}
 
   <h2>Kết quả gần nhất</h2>
   <div class="card scroll"><table><thead><tr><th>Ngày</th><th>Kỳ</th><th>Bộ số</th></tr></thead><tbody>

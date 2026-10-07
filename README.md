@@ -16,11 +16,13 @@ Lotto 5/35, Keno** — with a static HTML dashboard.
 - **Expected value**: exact odds, return-to-player, break-even jackpot,
   Keno RTP by spot level.
 - **Ticket suggestions**: anti-popular, diversified tickets (same odds,
-  lower chance of sharing a jackpot).
+  lower chance of sharing a jackpot), plus an *unseen pool* method: never-drawn
+  combinations filtered by a normal sum band, odd/low counts and in-ticket
+  spacing, weighted 4 hot / 4 cold / 2 balanced (backtested: no lift).
 
 ## Findings (Oct 2026)
 - No product shows a statistically significant deviation from fair draws.
-- No strategy beats random picking (0/9 on every product).
+- No strategy beats random picking (0/10 on lotto products, 0/9 on Keno).
 - Only real levers: Keno spot 10 has the best RTP (56.7% after tax);
   jackpot games are +EV only above the break-even jackpot (≈262 bn VND for
   6/55, 78 bn for 6/45, 35.8 bn for 5/35, ignoring sharing); avoid popular
