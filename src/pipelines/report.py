@@ -3,6 +3,7 @@
 import json
 from dataclasses import asdict
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import numpy as np
@@ -87,7 +88,9 @@ def analyse_game(key: str, n_suggest: int = 6, run_bt: bool = True) -> dict:
 def build(games: list[str] | None = None, run_bt: bool = True) -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     data = {
-        "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "generated": datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime(
+            "%Y-%m-%d %H:%M (GMT+7)"
+        ),
         "games": {k: analyse_game(k, run_bt=run_bt) for k in (games or GAMES)},
     }
     payload = json.dumps(data, default=_json_default, ensure_ascii=False)
