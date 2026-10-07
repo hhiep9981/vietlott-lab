@@ -2,11 +2,13 @@
 
 ```
 Lottery/
-├── vietlott-data/          upstream clone (read-only data source)
+├── data/                   own draw data (VN runner crawl ∪ upstream), 4 jsonl
+├── vietlott-data/          upstream clone (local only, gitignored)
 ├── src/
 │   ├── main.py             CLI only (argparse) — no logic
 │   ├── config.py           GameConfig, prize tables, paths, tax
 │   ├── data/loader.py      jsonl -> Draws (numpy)
+│   ├── data/merge.py       union of two data dirs by draw id
 │   ├── models/
 │   │   ├── prizes.py       exact odds, EV/RTP, ticket scoring
 │   │   ├── strategies.py   9 online walk-forward strategies
@@ -21,10 +23,17 @@ Lottery/
 │   │   └── dashboard_template.html
 │   └── utils/log.py
 ├── tests/test_core.py
-├── .github/workflows/update-dashboard.yml   daily data refresh + Pages deploy
+├── .github/workflows/
+│   ├── crawl.yml           self-hosted VN runner: crawl 13:30 & 22:30 VN
+│   └── update-dashboard.yml cloud fallback 01:30 VN: merge upstream, build, deploy
+├── scripts/setup_runner.sh install/remove the self-hosted runner (launchd)
 ├── outputs/                generated (dashboard.html, analysis.json)
 └── docs/
 ```
+
+Data flow: `crawl.yml` (VN runner, upstream crawler code) → `data/` ←
+`update-dashboard.yml` merges upstream `data/` (fallback) → build → Pages.
+Data dir resolution: `$VIETLOTT_DATA_DIR` > `./data` > `vietlott-data/data`.
 
 Flow: `loader` → `Draws` → (`descriptive`, `randomness`, `backtest`,
 `suggest`) → `report.build` → JSON embedded into the HTML template.
@@ -45,6 +54,7 @@ Design notes
 | Function | Signature | Purpose | Tags |
 |----------|-----------|---------|------|
 | `GameConfig.prize` | `(matches: int, special_hit: bool) -> int` | Prize lookup with "any special" fallback | `#config` |
+| `resolve_data_dir` | `() -> Path` | Env > ./data > vietlott-data/data | `#config #path` |
 | `keno_game` | `(spot: int) -> GameConfig` | Keno config for spot level 1..10 | `#config` |
 | `with_jackpots` | `(game, jackpots: list[int] \| None) -> GameConfig` | Override jackpot values | `#config` |
 
@@ -54,6 +64,14 @@ Design notes
 | `load_raw` | `(game: GameConfig) -> pl.DataFrame` | Read jsonl, numeric ids, dedup, sort | `#io #json #clean` |
 | `load_draws` | `(game: GameConfig) -> Draws` | Main/special/one-hot arrays | `#io #transform` |
 | `Draws.tail` | `(n: int) -> Draws` | Last n draws | `#transform` |
+
+### src/data/merge.py
+| Function | Signature | Purpose | Tags |
+|----------|-----------|---------|------|
+| `read_jsonl` | `(path: Path) -> list[dict]` | Read jsonl (missing -> []) | `#io #json` |
+| `merge_records` | `(primary, secondary) -> list[dict]` | Union by id, primary wins, sorted | `#merge` |
+| `merge_jsonl` | `(dst: Path, src: Path) -> int` | Merge file in place, return added | `#io #merge` |
+| `merge_dirs` | `(dst_dir: Path, src_dir: Path) -> dict[str, int]` | Merge all product files | `#io #merge` |
 
 ### src/models/prizes.py
 | Function | Signature | Purpose | Tags |

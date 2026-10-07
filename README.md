@@ -3,8 +3,10 @@
 Statistical research on four Vietlott products — **Power 6/55, Mega 6/45,
 Lotto 5/35, Keno** — with a static HTML dashboard.
 
-**Dashboard:** https://hhiep9981.github.io/vietlott-lab/ — refreshed daily by
-GitHub Actions from [vietvudanh/vietlott-data](https://github.com/vietvudanh/vietlott-data).
+**Dashboard:** https://hhiep9981.github.io/vietlott-lab/ — refreshed daily.
+Data is crawled twice a day by a self-hosted runner in Vietnam (Vietlott
+blocks foreign IPs), with [vietvudanh/vietlott-data](https://github.com/vietvudanh/vietlott-data)
+merged in as a fallback source.
 
 ## What it does
 - **Randomness tests** (8 per product): number frequency, special number,
@@ -32,11 +34,14 @@ GitHub Actions from [vietvudanh/vietlott-data](https://github.com/vietvudanh/vie
 See [docs/PROJECT.md](docs/PROJECT.md) for details.
 
 ## Run locally
-Data comes from [vietvudanh/vietlott-data](https://github.com/vietvudanh/vietlott-data),
-cloned next to `src/`:
+Data is in `data/`. To pull the latest upstream draws as well:
 
 ```bash
-git clone https://github.com/vietvudanh/vietlott-data.git
+git clone --depth 1 https://github.com/vietvudanh/vietlott-data.git
+.venv/bin/python -m src.main merge-data vietlott-data/data
+```
+
+```bash
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt
 .venv/bin/python -m src.main dashboard        # -> outputs/dashboard.html
 .venv/bin/python -m src.main suggest power655 -n 6

@@ -37,7 +37,10 @@ Python 3.12 (`.venv`, uv) · polars · numpy · scipy · pytest ·
 ECharts 5.6 (CDN) for the dashboard.
 
 ## Data
-Read-only from `vietlott-data/data/*.jsonl` (upstream clone — never edited).
+`data/*.jsonl` in this repo = own crawl (self-hosted runner in Vietnam,
+13:30 & 22:30 VN) merged with upstream `vietvudanh/vietlott-data` (cloud
+fallback, 01:30 VN). Vietlott blocks non-VN IPs, so crawling cannot run on
+GitHub-hosted runners. Local `vietlott-data/` clone is read-only.
 - 6/55: 1,407 draws (2017-08 → ), 1 draw lacks bonus number.
 - 6/45: 1,374 draws, ids start at 198 (first 197 draws missing upstream).
 - 5/35: 856 draws (2025-06 → ), 2 draws/day.
@@ -53,6 +56,8 @@ Read-only from `vietlott-data/data/*.jsonl` (upstream clone — never edited).
 .venv/bin/python -m src.main suggest power655 -n 6
 .venv/bin/python -m src.main suggest power655 --unseen   # 10 never-drawn tickets
 .venv/bin/python -m src.main suggest keno -n 5
+.venv/bin/python -m src.main merge-data vietlott-data/data   # union into ./data
 .venv/bin/python -m pytest tests -q
+bash scripts/setup_runner.sh          # install VN self-hosted runner (once)
 ```
 Outputs: `outputs/dashboard.html` (open directly), `outputs/analysis.json`.

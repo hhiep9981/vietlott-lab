@@ -2,9 +2,11 @@
 
 import argparse
 import json
+from pathlib import Path
 
-from src.config import GAMES, keno_game, with_jackpots
+from src.config import GAMES, ROOT, keno_game, with_jackpots
 from src.data.loader import load_draws
+from src.data.merge import merge_dirs
 from src.pipelines.backtest import run_backtest
 from src.pipelines.report import build, render_html
 from src.pipelines.suggest import (
@@ -48,7 +50,14 @@ def main() -> None:
         help="never-drawn pool + sum/odd/low/spacing rules, 4 hot/4 cold/2 balanced",
     )
 
+    m = sub.add_parser("merge-data", help="merge another data dir into ./data")
+    m.add_argument("source", type=Path, help="e.g. vietlott-data/data")
+    m.add_argument("--into", type=Path, default=ROOT / "data")
+
     a = p.parse_args()
+    if a.cmd == "merge-data":
+        print(json.dumps(merge_dirs(a.into, a.source)))
+        return
     if a.cmd == "dashboard":
         if a.render_only:
             render_html()

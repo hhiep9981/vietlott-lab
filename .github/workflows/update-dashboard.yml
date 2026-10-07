@@ -2,7 +2,7 @@ name: Update dashboard
 
 on:
   schedule:
-    - cron: "30 18 * * *" # 01:30 Asia/Ho_Chi_Minh, after upstream's midnight data push
+    - cron: "30 18 * * *" # 01:30 Asia/Ho_Chi_Minh: fallback, merges upstream data
   workflow_dispatch:
     inputs:
       force:
@@ -30,7 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Vietlott blocks non-VN IPs, so never crawl here: reuse upstream data.
+      # Vietlott blocks non-VN IPs: crawling happens in crawl.yml on the
+      # self-hosted VN runner. This job is the cloud fallback.
       - name: Fetch upstream data (data/ only)
         uses: actions/checkout@v7
         with:
@@ -39,10 +40,24 @@ jobs:
           sparse-checkout: data
           fetch-depth: 1
 
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python -r requirements.txt
+
+      # data/ = own crawl (self-hosted VN runner) + upstream, union by draw id.
+      # Whichever source is fresher wins, so either one can be offline.
+      - name: Merge upstream data into data/
+        run: .venv/bin/python -m src.main merge-data vietlott-data/data
+
       - name: Check whether data changed
         id: data
         run: |
-          hash=$(cat vietlott-data/data/{power655,power645,power535,keno}.jsonl | sha256sum | cut -d' ' -f1)
+          hash=$(cat data/{power655,power645,power535,keno}.jsonl | sha256sum | cut -d' ' -f1)
           old=$(cat outputs/data.sha256 2>/dev/null || true)
           echo "hash=$hash" >> "$GITHUB_OUTPUT"
           if [ "$hash" = "$old" ] && [ "${{ inputs.force }}" != "true" ]; then
@@ -51,17 +66,6 @@ jobs:
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - uses: astral-sh/setup-uv@v10.2.0
-        if: steps.data.outputs.changed == 'true'
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        if: steps.data.outputs.changed == 'true'
-        run: |
-          uv venv .venv
-          uv pip install --python .venv/bin/python -r requirements.txt
 
       - name: Test
         if: steps.data.outputs.changed == 'true'
@@ -73,16 +77,17 @@ jobs:
           .venv/bin/python -m src.main dashboard
           echo "${{ steps.data.outputs.hash }}" > outputs/data.sha256
 
-      - name: Commit outputs
+      - name: Commit data and outputs
         if: steps.data.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
-          git add outputs/dashboard.html outputs/analysis.json outputs/data.sha256
+          git add data/ outputs/dashboard.html outputs/analysis.json outputs/data.sha256
           if git diff --cached --quiet; then
             echo "Nothing to commit"
           else
-            git commit -m "Update dashboard data ($(date -u +%Y-%m-%d))"
+            git commit -m "Update dashboard data ($(TZ=Asia/Ho_Chi_Minh date +%Y-%m-%d))"
+            git pull --rebase --quiet
             git push
           fi
 

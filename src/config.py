@@ -10,11 +10,27 @@ Sources (fetched 2026-10-07):
 - Power 6/55, Mega 6/45: vietlott.vn product pages
 """
 
+import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = ROOT / "vietlott-data" / "data"
+UPSTREAM_DATA_DIR = ROOT / "vietlott-data" / "data"
+DATA_FILES = ("power655.jsonl", "power645.jsonl", "power535.jsonl", "keno.jsonl")
+
+
+def resolve_data_dir() -> Path:
+    """$VIETLOTT_DATA_DIR > ./data (own crawl, merged) > vietlott-data/data."""
+    env = os.environ.get("VIETLOTT_DATA_DIR")
+    if env:
+        return Path(env)
+    own = ROOT / "data"
+    if all((own / f).exists() for f in DATA_FILES):
+        return own
+    return UPSTREAM_DATA_DIR
+
+
+DATA_DIR = resolve_data_dir()
 OUTPUT_DIR = ROOT / "outputs"
 
 TICKET_PRICE = 10_000

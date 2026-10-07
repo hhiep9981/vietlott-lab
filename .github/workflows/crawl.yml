@@ -1,0 +1,88 @@
+name: Crawl data (VN runner)
+
+# Runs on the self-hosted runner with label `vn` (a machine in Vietnam),
+# because Vietlott blocks non-VN IPs. Never triggered by pull requests:
+# untrusted code must not reach the self-hosted machine.
+on:
+  schedule:
+    - cron: "30 6 * * *" # 13:30 Asia/Ho_Chi_Minh, after the 13:00 Lotto 5/35 draw
+    - cron: "30 15 * * *" # 22:30 Asia/Ho_Chi_Minh, after the last draws of the day
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: crawl
+  cancel-in-progress: false
+
+env:
+  PRODUCTS: "power_655 power_645 power_535 keno"
+  DATA_FILES: "power655.jsonl power645.jsonl power535.jsonl keno.jsonl"
+
+jobs:
+  crawl:
+    runs-on: [self-hosted, vn]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Checkout upstream crawler code
+        uses: actions/checkout@v7
+        with:
+          repository: vietvudanh/vietlott-data
+          path: crawler
+          fetch-depth: 1
+          sparse-checkout: src
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Crawl
+        run: |
+          mkdir -p crawler/data
+          for f in $DATA_FILES; do cp "data/$f" "crawler/data/$f"; done
+          cd crawler
+          uv sync --frozen --quiet
+          failed=0
+          for p in $PRODUCTS; do
+            echo "::group::$p"
+            uv run vietlott-crawl "$p" || { echo "::warning::crawl $p failed"; failed=$((failed+1)); }
+            uv run vietlott-missing "$p" || echo "::warning::missing $p failed"
+            echo "::endgroup::"
+          done
+          if [ "$failed" -eq 4 ]; then echo "::error::all products failed"; exit 1; fi
+
+      - name: Merge crawled data into data/
+        run: |
+          uv venv --quiet --python 3.12 .venv
+          uv pip install --quiet --python .venv/bin/python -r requirements.txt
+          .venv/bin/python -m src.main merge-data crawler/data
+          .venv/bin/python -m pytest tests -q -k loader
+
+      - name: Commit data
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No new draws"
+          else
+            git diff --cached --stat
+            git commit -m "Crawl data ($(TZ=Asia/Ho_Chi_Minh date +'%Y-%m-%d %H:%M'))"
+            git pull --rebase --quiet
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger dashboard rebuild
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run update-dashboard.yml --ref main -R "$GITHUB_REPOSITORY"
+
+      - name: Clean workspace
+        if: always()
+        run: rm -rf crawler .venv

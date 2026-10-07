@@ -38,6 +38,18 @@ Done
 - GitHub Pages switched from branch deploy to Actions deploy (`deploy` job
   publishes `index.html` + `outputs/dashboard.html`; also runs on push).
 
+## 2026-10-07 — Session 1d: own crawl on self-hosted VN runner
+- `data/` added to repo (seeded from upstream, Keno deduped).
+- `crawl.yml` on `[self-hosted, vn]`: upstream crawler code + own data,
+  `vietlott-crawl` + `vietlott-missing` for 4 products, commit `data/`,
+  dispatch `update-dashboard.yml`. Never triggered by PRs.
+- `update-dashboard.yml` now merges upstream into `data/` (fallback).
+- `scripts/setup_runner.sh` (user runs once): official runner, digest
+  verified, launchd service, label `vn`.
+- Repo setting: fork PR workflows need approval (all external contributors).
+- Verified the upstream crawler works from the user's Mac (VN IP).
+- 30 tests passing.
+
 Next / ideas
 - Add historical jackpot values (if a source is found) → "play only when
   jackpot ≥ break-even" backtest, and jackpot-sharing estimates.

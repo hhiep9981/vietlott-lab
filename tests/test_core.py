@@ -176,3 +176,33 @@ def test_mode_weights_direction():
     assert mode_weights(z, "hot").argmax() == 2
     assert mode_weights(z, "cold").argmax() == 0
     assert mode_weights(z, "balanced").argmax() == 1
+
+
+# --- data merge ---------------------------------------------------------
+def test_merge_union_by_id_primary_wins(tmp_path):
+    from src.data.merge import merge_jsonl, read_jsonl
+
+    own = tmp_path / "own" / "power655.jsonl"
+    up = tmp_path / "up" / "power655.jsonl"
+    own.parent.mkdir()
+    up.parent.mkdir()
+    own.write_text(
+        '{"date":"2026-01-01","id":"00002","result":[1],"src":"own"}\n'
+        '{"date":"2026-01-03","id":"00003","result":[3]}\n'
+    )
+    up.write_text(
+        '{"date":"2026-01-01","id":"00001","result":[0]}\n'
+        '{"date":"2026-01-01","id":"00002","result":[9],"src":"up"}\n'
+    )
+    assert merge_jsonl(own, up) == 1
+    rows = read_jsonl(own)
+    assert [r["id"] for r in rows] == ["00001", "00002", "00003"]
+    assert rows[1]["src"] == "own"
+    assert merge_jsonl(own, up) == 0  # idempotent
+
+
+def test_data_dir_env_override(monkeypatch, tmp_path):
+    from src.config import resolve_data_dir
+
+    monkeypatch.setenv("VIETLOTT_DATA_DIR", str(tmp_path))
+    assert resolve_data_dir() == tmp_path
