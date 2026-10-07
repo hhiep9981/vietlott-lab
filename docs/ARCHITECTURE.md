@@ -33,6 +33,10 @@ Lottery/
 
 Data flow: `crawl.yml` (VN runner, upstream crawler code) → `data/` ←
 `update-dashboard.yml` merges upstream `data/` (fallback) → build → Pages.
+Per-visitor tickets: `dashboard_template.html` re-implements the unseen-pool
+sampler in JS (`generateTickets`, seeded by device id + date) — keep it in
+sync with `src/models/unseen_pool.py` when rules change.
+
 Data dir resolution: `$VIETLOTT_DATA_DIR` > `./data` > `vietlott-data/data`.
 
 Flow: `loader` → `Draws` → (`descriptive`, `randomness`, `backtest`,
@@ -150,7 +154,7 @@ Design notes
 |----------|-----------|---------|------|
 | `popularity` | `(ticket, game, last, history) -> (float, list[str])` | Heuristic popularity score | `#predict` |
 | `suggest` | `(draws, n=5, max_overlap=None, strategy=None, n_candidates=50000, seed=None) -> list[Suggestion]` | Anti-popular, diversified tickets | `#predict` |
-| `suggest_unseen_pool` | `(draws, n=10, seed=None) -> dict` | 10 never-drawn tickets (4 hot / 4 cold / 2 balanced) + rules | `#predict` |
+| `suggest_unseen_pool` | `(draws, n=10, seed=None) -> dict` | 10 never-drawn tickets (4 hot / 4 cold / 2 balanced) + rules + `client` payload for the in-browser generator | `#predict` |
 | `keno_suggest` | `(n=5, spot=None, seed=None) -> dict` | Best-RTP spot + random tickets | `#predict` |
 | `breakeven_jackpot` | `(game) -> float \| None` | Jackpot where RTP = 100% | `#eval` |
 | `value_summary` | `(game) -> dict` | RTP / break-even summary | `#eval` |

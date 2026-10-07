@@ -240,12 +240,129 @@ const MODE_NOTE = {
   cold: "ưu tiên số về ít hơn kỳ vọng",
   balanced: "ưu tiên số có tần suất sát kỳ vọng",
 };
+
+/* ---------- per-visitor generator: unseen-pool rules, seeded PRNG ----------
+   Mirrors src/models/unseen_pool.py. Seed = device id (random, localStorage)
+   + VN date + product + regeneration counter. No IP or personal data. */
+const memStore = {}; // fallback when localStorage is blocked (private mode)
+function store(k, v) {
+  if (v === undefined) {
+    try { const x = localStorage.getItem(k); if (x !== null) return x; } catch (e) {}
+    return memStore[k] ?? null;
+  }
+  memStore[k] = v;
+  try { localStorage.setItem(k, v); } catch (e) {}
+  return null;
+}
+function deviceId() {
+  let id = store("vl-device");
+  if (!id) {
+    id = Array.from(crypto.getRandomValues(new Uint32Array(2)), (x) => x.toString(16).padStart(8, "0")).join("");
+    store("vl-device", id);
+  }
+  return id;
+}
+const todayVN = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+function hash32(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h1 ^ h2) >>> 0;
+}
+function mulberry32(a) {
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function modeWeights(z, mode, k) {
+  const w = z.map((v) => (mode === "hot" ? Math.exp(k * v) : mode === "cold" ? Math.exp(-k * v) : Math.exp(-0.5 * k * v * v)));
+  const s = w.reduce((a, b) => a + b, 0);
+  return w.map((v) => v / s);
+}
+function splitModes(n, split) {
+  const keys = Object.keys(split);
+  const alloc = Object.fromEntries(keys.map((m) => [m, Math.floor(n * split[m])]));
+  const left = n - keys.reduce((a, m) => a + alloc[m], 0);
+  [...keys].sort((a, b) => (n * split[b] - alloc[b]) - (n * split[a] - alloc[a])).slice(0, left).forEach((m) => alloc[m]++);
+  return keys.flatMap((m) => Array(alloc[m]).fill(m));
+}
+function weightedPick(rng, w, k) { // Gumbel top-k = weighted sampling without replacement
+  return w.map((v, i) => [Math.log(v) - Math.log(-Math.log(rng() || 1e-12)), i])
+    .sort((a, b) => b[0] - a[0]).slice(0, k).map((x) => x[1] + 1).sort((a, b) => a - b);
+}
+function passesRules(t, R) {
+  const sum = t.reduce((a, b) => a + b, 0);
+  const odd = t.filter((v) => v % 2).length;
+  const low = t.filter((v) => v <= R.low_max).length;
+  const gaps = t.slice(1).map((v, i) => v - t[i]);
+  return sum >= R.sum_lo && sum <= R.sum_hi && R.odd_ok.includes(odd) && R.low_ok.includes(low)
+    && Math.max(...gaps) <= R.max_gap && gaps.filter((g) => g === 1).length <= R.max_adjacent;
+}
+function generateTickets(U, seedStr, n = 10) {
+  const C = U.client, R = U.rules;
+  const rng = mulberry32(hash32(seedStr));
+  const history = new Set(C.history);
+  const out = [];
+  for (const mode of splitModes(n, C.split)) {
+    const w = modeWeights(C.freq_z, mode, C.strength);
+    let overlap = C.max_overlap, t = null;
+    for (let i = 0; i < 40000 && !t; i++) {
+      if (i === 20000) overlap++; // relax diversification before giving up
+      const c = weightedPick(rng, w, C.pick);
+      if (!passesRules(c, R) || history.has(c.join("-"))) continue;
+      if (out.some((o) => o.numbers.filter((x) => c.includes(x)).length > overlap)) continue;
+      t = c;
+    }
+    if (!t) throw new Error("No ticket satisfies the rules");
+    const special = C.special_pool ? weightedPick(rng, modeWeights(C.special_z, mode, C.strength), 1)[0] : null;
+    const sum = t.reduce((a, b) => a + b, 0);
+    const fz = t.map((v) => C.freq_z[v - 1]);
+    out.push({
+      numbers: t, special, mode, sum,
+      sum_z: (sum - C.sum_mean) / C.sum_sd,
+      odd: t.filter((v) => v % 2).length,
+      low: t.filter((v) => v <= R.low_max).length,
+      gaps: t.slice(1).map((v, i) => v - t[i]),
+      freq_z: fz,
+      mean_freq_z: fz.reduce((a, b) => a + b, 0) / fz.length,
+    });
+  }
+  return out;
+}
+function renderMyTickets(key, U) {
+  const day = todayVN();
+  const ckey = `vl-gen-${key}-${day}`;
+  const counter = parseInt(store(ckey) || "0", 10) || 0;
+  const dev = deviceId();
+  const tickets = generateTickets(U, `${dev}|${key}|${day}|${counter}`);
+  const sign = (v) => (v >= 0 ? "+" : "") + fmt(v, 2);
+  document.getElementById("my-meta").textContent = `Ngày ${day} · mã thiết bị ${dev.slice(0, 6)} · lần tạo #${counter + 1}`;
+  document.getElementById("my-tickets").innerHTML = `<table><thead><tr><th>Nhóm</th><th>Bộ số</th><th class="num">Tổng (z)</th><th class="num">Lẻ / Nhỏ</th><th>Khoảng cách</th><th class="num">Tần suất TB (z)</th></tr></thead><tbody>
+    ${["hot", "cold", "balanced"].map((m) => tickets.filter((t) => t.mode === m).map((t, i) => `<tr>
+      <td>${i === 0 ? `<b>${MODE_LABEL[m]}</b><div style="color:var(--muted);font-size:12px">${MODE_NOTE[m]}</div>` : ""}</td>
+      <td><div class="balls">${t.numbers.map((v) => `<span class="ball sm">${v}</span>`).join("")}${t.special ? `<span class="ball sm sp" title="Số đặc biệt">${t.special}</span>` : ""}</div></td>
+      <td class="num">${t.sum} (${sign(t.sum_z)})</td>
+      <td class="num">${t.odd} / ${t.low}</td>
+      <td style="font-variant-numeric:tabular-nums">${t.gaps.join(" · ")}</td>
+      <td class="num" title="${t.freq_z.map((v) => fmt(v, 2)).join(", ")}">${sign(t.mean_freq_z)}</td></tr>`).join("")).join("")}
+    </tbody></table>`;
+  document.getElementById("my-new").onclick = () => { store(ckey, String(counter + 1)); renderMyTickets(key, U); };
+  document.getElementById("my-reset").onclick = () => { store(ckey, "0"); renderMyTickets(key, U); };
+  window.__vlTickets = tickets; // for inspection
+}
+
 function unseenPoolSection(G, bt) {
   const U = G.unseen_pool;
   const R = U.rules;
   const r = bt.find((x) => x.strategy === "Unseen pool");
   const sign = (v) => (v >= 0 ? "+" : "") + fmt(v, 2);
-  const modes = ["hot", "cold", "balanced"];
   return `
   <h2>Pool bộ số chưa từng xuất hiện</h2>
   <p class="lede">Pool gồm <b>${fmt(U.pool_size)}</b> bộ số (đã loại ${fmt(U.excluded)} bộ từng được quay).
@@ -271,15 +388,11 @@ function unseenPoolSection(G, bt) {
     </div>
   </div>
   <div class="card" style="margin-top:16px">
-    <div class="scroll"><table><thead><tr><th>Nhóm</th><th>Bộ số</th><th class="num">Tổng (z)</th><th class="num">Lẻ / Nhỏ</th><th>Khoảng cách</th><th class="num">Tần suất TB (z)</th></tr></thead><tbody>
-    ${modes.map((m) => U.tickets.filter((t) => t.mode === m).map((t, i) => `<tr>
-      <td>${i === 0 ? `<b>${MODE_LABEL[m]}</b><div style="color:var(--muted);font-size:12px">${MODE_NOTE[m]}</div>` : ""}</td>
-      <td><div class="balls">${t.numbers.map((n) => `<span class="ball sm">${n}</span>`).join("")}${t.special ? `<span class="ball sm sp" title="Số đặc biệt">${t.special}</span>` : ""}</div></td>
-      <td class="num">${t.sum} (${sign(t.sum_z)})</td>
-      <td class="num">${t.odd} / ${t.low}</td>
-      <td style="font-variant-numeric:tabular-nums">${t.gaps.join(" · ")}</td>
-      <td class="num" title="${t.freq_z.join(", ")}">${sign(t.mean_freq_z)}</td></tr>`).join("")).join("")}
-    </tbody></table></div>
+    <div class="card-head"><div><h3>Bộ số của bạn hôm nay</h3>
+      <p class="sub" id="my-meta"></p></div>
+      <div class="seg"><button id="my-new" aria-pressed="false">Tạo bộ khác</button><button id="my-reset" aria-pressed="false">Về bộ đầu tiên</button></div></div>
+    <p class="sub">Mỗi người xem nhận bộ số riêng, sinh ngay trên trình duyệt từ một mã ngẫu nhiên của thiết bị và ngày hôm nay — không thu thập IP hay dữ liệu cá nhân. Tải lại trang vẫn giữ nguyên bộ số trong ngày.</p>
+    <div class="scroll" id="my-tickets"></div>
     <p class="sub" style="margin-top:8px">Tần suất z: độ lệch tần suất của các số trong vé so với kỳ vọng (trung bình toàn bộ lịch sử và ${fmt(G.frequency.recent_n)} kỳ gần nhất). Rê chuột để xem z từng số.</p>
   </div>`;
 }
@@ -419,6 +532,7 @@ function render(key) {
 
   document.getElementById("app").innerHTML = html;
   drawCharts(key, G);
+  if (G.unseen_pool && G.unseen_pool.client) renderMyTickets(key, G.unseen_pool);
 }
 
 function drawCharts(key, G) {

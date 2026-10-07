@@ -206,3 +206,14 @@ def test_data_dir_env_override(monkeypatch, tmp_path):
 
     monkeypatch.setenv("VIETLOTT_DATA_DIR", str(tmp_path))
     assert resolve_data_dir() == tmp_path
+
+
+def test_unseen_pool_client_payload():
+    from src.pipelines.suggest import suggest_unseen_pool
+
+    draws = load_draws(LOTTO_535)
+    c = suggest_unseen_pool(draws, n=10, seed=1)["client"]
+    assert len(c["freq_z"]) == LOTTO_535.pool
+    assert len(c["special_z"]) == LOTTO_535.special_pool
+    assert len(c["history"]) == len({tuple(r.tolist()) for r in draws.main})
+    assert all(len(h.split("-")) == LOTTO_535.pick for h in c["history"])

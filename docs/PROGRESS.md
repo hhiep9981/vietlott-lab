@@ -50,6 +50,19 @@ Done
 - Verified the upstream crawler works from the user's Mac (VN IP).
 - 30 tests passing.
 
+## 2026-10-07 — Session 1e: per-visitor tickets on the dashboard
+- Self-hosted runner installed by the user (MaxPookBro-vn); first scheduled
+  crawl ran at 13:45 VN and triggered a dashboard rebuild.
+- Dashboard generates a personal 10-ticket set per visitor in the browser
+  (GitHub Pages is static, so no IP access): seed = random device id in
+  localStorage + VN date + product + "Tạo bộ khác" counter, mulberry32 PRNG,
+  same unseen-pool rules as Python (`client` payload from
+  `suggest_unseen_pool`). No IP / personal data collected.
+- Verified in browser: 300 simulated devices -> all sets pass rules and
+  exclude history; stable across reload; hot/cold/balanced mean z
+  +0.61 / -0.62 / 0.00; ~0.3 ms per set.
+- 31 tests passing.
+
 Next / ideas
 - Add historical jackpot values (if a source is found) → "play only when
   jackpot ≥ break-even" backtest, and jackpot-sharing estimates.

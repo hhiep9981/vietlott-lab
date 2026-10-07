@@ -194,4 +194,23 @@ def suggest_unseen_pool(draws: Draws, n: int = 10, seed: int | None = None) -> d
             "max_adjacent": rules.max_adjacent,
         },
         "tickets": rows,
+        # Inputs for the in-browser generator (dashboard, per-visitor sets).
+        "client": {
+            "pick": game.pick,
+            "pool": game.pool,
+            "special_pool": game.special_pool if game.special == "separate" else 0,
+            "max_overlap": strat.max_overlap,
+            "strength": strat.strength,
+            "split": strat.split,
+            "freq_z": [round(float(v), 4) for v in strat.frequency_z()],
+            "special_z": (
+                [round(float(v), 4) for v in special_z]
+                if game.special == "separate"
+                else None
+            ),
+            "sum_mean": round(float(strat.sum_mean), 3),
+            "sum_sd": round(float(strat.sum_sd), 3),
+            # Past combinations, numbers joined by "-" (exact-match exclusion).
+            "history": sorted("-".join(map(str, c)) for c in strat.history),
+        },
     }
