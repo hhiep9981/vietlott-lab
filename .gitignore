@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.claude/
+.DS_Store
+# Upstream data repo (clone separately) and reference papers (copyrighted)
+vietlott-data/
+Knowledge/
+outputs/build.log
