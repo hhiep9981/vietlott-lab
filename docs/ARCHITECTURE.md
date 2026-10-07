@@ -21,6 +21,7 @@ Lottery/
 │   │   └── dashboard_template.html
 │   └── utils/log.py
 ├── tests/test_core.py
+├── .github/workflows/update-dashboard.yml   daily data refresh + Pages deploy
 ├── outputs/                generated (dashboard.html, analysis.json)
 └── docs/
 ```

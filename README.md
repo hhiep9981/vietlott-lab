@@ -3,7 +3,8 @@
 Statistical research on four Vietlott products — **Power 6/55, Mega 6/45,
 Lotto 5/35, Keno** — with a static HTML dashboard.
 
-**Dashboard:** https://hhiep9981.github.io/vietlott-lab/
+**Dashboard:** https://hhiep9981.github.io/vietlott-lab/ — refreshed daily by
+GitHub Actions from [vietvudanh/vietlott-data](https://github.com/vietvudanh/vietlott-data).
 
 ## What it does
 - **Randomness tests** (8 per product): number frequency, special number,

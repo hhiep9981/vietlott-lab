@@ -1,0 +1,113 @@
+name: Update dashboard
+
+on:
+  schedule:
+    - cron: "30 18 * * *" # 01:30 Asia/Ho_Chi_Minh, after upstream's midnight data push
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Rebuild even if data is unchanged"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update-dashboard
+  cancel-in-progress: false
+
+jobs:
+  update:
+    # Data refresh only on schedule / manual run; pushes just redeploy.
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Vietlott blocks non-VN IPs, so never crawl here: reuse upstream data.
+      - name: Fetch upstream data (data/ only)
+        uses: actions/checkout@v4
+        with:
+          repository: vietvudanh/vietlott-data
+          path: vietlott-data
+          sparse-checkout: data
+          fetch-depth: 1
+
+      - name: Check whether data changed
+        id: data
+        run: |
+          hash=$(cat vietlott-data/data/{power655,power645,power535,keno}.jsonl | sha256sum | cut -d' ' -f1)
+          old=$(cat outputs/data.sha256 2>/dev/null || true)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          if [ "$hash" = "$old" ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Data unchanged ($hash) - skipping rebuild"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: astral-sh/setup-uv@v6
+        if: steps.data.outputs.changed == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        if: steps.data.outputs.changed == 'true'
+        run: |
+          uv venv .venv
+          uv pip install --python .venv/bin/python -r requirements.txt
+
+      - name: Test
+        if: steps.data.outputs.changed == 'true'
+        run: .venv/bin/python -m pytest tests -q
+
+      - name: Build dashboard
+        if: steps.data.outputs.changed == 'true'
+        run: |
+          .venv/bin/python -m src.main dashboard
+          echo "${{ steps.data.outputs.hash }}" > outputs/data.sha256
+
+      - name: Commit outputs
+        if: steps.data.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
+          git add outputs/dashboard.html outputs/analysis.json outputs/data.sha256
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "Update dashboard data ($(date -u +%Y-%m-%d))"
+            git push
+          fi
+
+  deploy:
+    needs: update
+    # Run after update (also when it skipped the rebuild) and on every push.
+    if: always() && (needs.update.result == 'success' || needs.update.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/outputs
+          cp index.html .nojekyll _site/
+          cp outputs/dashboard.html _site/outputs/
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

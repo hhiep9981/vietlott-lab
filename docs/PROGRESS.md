@@ -29,6 +29,15 @@ Done
   (6/45), -0.53% (5/35); all CIs include 0 -> no better than random.
 - 28 tests passing.
 
+## 2026-10-07 — Session 1c: daily auto-update
+- `.github/workflows/update-dashboard.yml`: daily 18:30 UTC (01:30 VN) +
+  manual (`force` input). Sparse-checkouts `data/` from
+  vietvudanh/vietlott-data (no crawling: Vietlott blocks non-VN IPs),
+  skips when the sha256 of the 4 jsonl files equals `outputs/data.sha256`,
+  else tests -> build -> commits outputs as github-actions[bot].
+- GitHub Pages switched from branch deploy to Actions deploy (`deploy` job
+  publishes `index.html` + `outputs/dashboard.html`; also runs on push).
+
 Next / ideas
 - Add historical jackpot values (if a source is found) → "play only when
   jackpot ≥ break-even" backtest, and jackpot-sharing estimates.
