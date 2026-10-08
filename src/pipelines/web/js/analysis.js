@@ -48,7 +48,7 @@ function renderAnalysis(key) {
   <h2>Khoảng cách giữa các lần xuất hiện</h2>
   <p class="lede">Số kỳ giữa hai lần một số được quay. Nếu ngẫu nhiên, khoảng cách tuân theo phân phối hình học với trung bình ${fmt(G.gaps.expected_mean, 2)} kỳ. Một số "lâu chưa về" không có khả năng về cao hơn ở kỳ sau.</p>
   <div class="grid">
-    ${card("c-gapcur", "Số kỳ chưa về (hiện tại)", "Rê chuột để xem khoảng cách trung bình, lớn nhất và xác suất vắng lâu như vậy.", "wide")}
+    ${card("c-gapcur", "Số kỳ chưa về (hiện tại)", "Rê chuột để xem khoảng cách trung bình, lớn nhất và độ hiếm của việc vắng lâu như vậy.", "wide")}
     <div class="card wide"><h3>Phân phối khoảng cách (tất cả các số)</h3><p class="sub">So với phân phối hình học lý thuyết.</p>${legendInline()}<div id="c-gaphist" class="chart"></div></div>
   </div>
 
@@ -160,7 +160,7 @@ function drawAnalysisCharts(key, G) {
 
   const Gp = G.gaps;
   obsVsExp("c-gapcur", nums, Gp.current, Gp.expected_mean, {
-    tooltip: { formatter: (p) => { const i = p[0].dataIndex; return `Số <b>${p[0].name}</b><br>Chưa về: ${Gp.current[i]} kỳ<br>TB khoảng cách: ${fmt(Gp.mean[i], 1)} · lớn nhất: ${Gp.max[i]}<br>P(vắng ≥ ${Gp.current[i]} kỳ) = ${pct(Gp.p_absent[i], 2)}`; } },
+    tooltip: { formatter: (p) => { const i = p[0].dataIndex; return `Số <b>${p[0].name}</b><br>Chưa về: ${Gp.current[i]} kỳ<br>TB khoảng cách: ${fmt(Gp.mean[i], 1)} · lớn nhất: ${Gp.max[i]}<br>Vắng lâu cỡ này: ${rarity(Gp.p_absent[i])}`; } },
   });
   obsVsExp("c-gaphist", Gp.hist_k.map((k, i) => (i === Gp.hist_k.length - 1 ? "≥" + k : String(k))), Gp.hist_obs, Gp.hist_exp, { xName: "Khoảng cách (kỳ)" });
 

@@ -35,6 +35,8 @@ function simShapes(m, n = 20000) {
   return rows;
 }
 const share = (rows, f) => rows.reduce((a, r) => a + (f(r) ? 1 : 0), 0) / rows.length;
+// "1 in N" for how often a fair draw leaves a number out this long.
+const rarity = (p) => (p >= 0.5 ? "Thường gặp" : p > 0 ? `1/${fmt(Math.round(1 / p))} lần` : "< 1/100.000 lần");
 const oneIn = (p) => (p > 0 ? `≈ 1/${fmt(1 / p, p > 0.01 ? 1 : 0)}` : "< 1/20.000");
 
 function openTicket(key, nums, special = null, ctx = null) {
@@ -86,12 +88,12 @@ function openTicket(key, nums, special = null, ctx = null) {
     <button class="ghost" id="dlg-close" aria-label="Đóng">Đóng ✕</button></div>
   <div class="dlg-body">
     <h3>Từng số</h3>
-    <div class="scroll"><table><thead><tr><th>Số</th><th>Chẵn/Lẻ</th><th>Nhỏ/Lớn</th><th>Kỳ gần nhất?</th><th class="num">Số lần (toàn bộ)</th><th class="num">z toàn bộ</th><th class="num">z ${fmt(F.recent_n)} kỳ</th><th>Phân loại</th><th class="num">Chưa về</th><th class="num">KC TB</th><th class="num">P(vắng ≥ vậy)</th></tr></thead><tbody>
+    <div class="scroll"><table><thead><tr><th>Số</th><th>Chẵn/Lẻ</th><th>Nhỏ/Lớn</th><th>Kỳ gần nhất?</th><th class="num">Số lần (toàn bộ)</th><th class="num">z toàn bộ</th><th class="num">z ${fmt(F.recent_n)} kỳ</th><th>Phân loại</th><th class="num">Chưa về</th><th class="num">KC TB</th><th class="num">Độ hiếm</th></tr></thead><tbody>
     ${nums.map((v) => `<tr><td><span class="ball sm">${pad2(v)}</span></td><td>${v % 2 ? "Lẻ" : "Chẵn"}</td><td>${v <= R.low_max ? "Nhỏ" : "Lớn"}</td>
       <td>${last.has(v) ? "<b>Có</b>" : "–"}</td><td class="num">${fmt(F.all[v - 1])}</td><td class="num">${sign(C.zAll[v - 1])}</td><td class="num">${sign(C.zRecent[v - 1])}</td>
-      <td>${clsLabel(v)}</td><td class="num">${Gp.current[v - 1]} kỳ</td><td class="num">${fmt(Gp.mean[v - 1], 1)}</td><td class="num">${pct(Gp.p_absent[v - 1], 1)}</td></tr>`).join("")}
+      <td>${clsLabel(v)}</td><td class="num">${Gp.current[v - 1]} kỳ</td><td class="num">${fmt(Gp.mean[v - 1], 1)}</td><td class="num">${rarity(Gp.p_absent[v - 1])}</td></tr>`).join("")}
     </tbody></table></div>
-    <p class="muted" style="font-size:12.5px">z: độ lệch tần suất so với kỳ vọng (±2 mới đáng chú ý). Nóng/Lạnh: nhóm 1/3 số có tần suất cao/thấp nhất. KC TB: khoảng cách trung bình giữa hai lần về (kỳ vọng ${fmt(Gp.expected_mean, 1)}).</p>
+    <p class="muted" style="font-size:12.5px">z: độ lệch tần suất so với kỳ vọng (±2 mới đáng chú ý). Nóng/Lạnh: nhóm 1/3 số có tần suất cao/thấp nhất. KC TB: khoảng cách trung bình giữa hai lần về (kỳ vọng ${fmt(Gp.expected_mean, 1)}). Độ hiếm: nếu quay ngẫu nhiên, cứ bao nhiêu lần mới có một số vắng lâu được như vậy (ví dụ 1/10 lần = khá hiếm). Vắng lâu <b>không</b> làm số đó dễ về hơn ở kỳ sau.</p>
 
     <h3>Cả bộ</h3>
     <ul class="facts">

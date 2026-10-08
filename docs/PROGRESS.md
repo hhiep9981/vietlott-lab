@@ -85,6 +85,8 @@ Done
   Random seeds spread ±2.5% → noise; 1 in 20 runs is "significant" by luck.
 - Keno: analysis only (user choice). 44 tests (incl. Node JS model checks).
 - Morning crawl moved to 09:00 VN (cron `0 2 * * *` UTC) at the user's request.
+- Absence probability column renamed "Độ hiếm" and shown as "1/N lần" (popup table and
+  gap-chart tooltip) instead of "P(vắng ≥ vậy)".
 
 Next / ideas
 - Add historical jackpot values (if a source is found) → "play only when
