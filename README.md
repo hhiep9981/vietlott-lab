@@ -4,7 +4,7 @@ Statistical research on four Vietlott products — **Power 6/55, Mega 6/45,
 Lotto 5/35, Keno** — with a static HTML dashboard.
 
 **Dashboard:** https://hhiep9981.github.io/vietlott-lab/ — refreshed daily.
-Data is crawled twice a day by a self-hosted runner in Vietnam (Vietlott
+Data is crawled three times a day by a self-hosted runner in Vietnam (Vietlott
 blocks foreign IPs), with [vietvudanh/vietlott-data](https://github.com/vietvudanh/vietlott-data)
 merged in as a fallback source.
 

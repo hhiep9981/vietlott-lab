@@ -63,6 +63,9 @@ Done
   +0.61 / -0.62 / 0.00; ~0.3 ms per set.
 - 31 tests passing.
 
+## 2026-10-08
+- Added a 07:00 VN crawl (cron `0 0 * * *` UTC) to `crawl.yml`.
+
 Next / ideas
 - Add historical jackpot values (if a source is found) → "play only when
   jackpot ≥ break-even" backtest, and jackpot-sharing estimates.

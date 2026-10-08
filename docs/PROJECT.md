@@ -38,7 +38,7 @@ ECharts 5.6 (CDN) for the dashboard.
 
 ## Data
 `data/*.jsonl` in this repo = own crawl (self-hosted runner in Vietnam,
-13:30 & 22:30 VN) merged with upstream `vietvudanh/vietlott-data` (cloud
+07:00, 13:30 & 22:30 VN) merged with upstream `vietvudanh/vietlott-data` (cloud
 fallback, 01:30 VN). Vietlott blocks non-VN IPs, so crawling cannot run on
 GitHub-hosted runners. Local `vietlott-data/` clone is read-only.
 - 6/55: 1,407 draws (2017-08 → ), 1 draw lacks bonus number.

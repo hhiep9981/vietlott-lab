@@ -5,6 +5,7 @@ name: Crawl data (VN runner)
 # untrusted code must not reach the self-hosted machine.
 on:
   schedule:
+    - cron: "0 0 * * *" # 07:00 Asia/Ho_Chi_Minh, picks up anything missed overnight
     - cron: "30 6 * * *" # 13:30 Asia/Ho_Chi_Minh, after the 13:00 Lotto 5/35 draw
     - cron: "30 15 * * *" # 22:30 Asia/Ho_Chi_Minh, after the last draws of the day
   workflow_dispatch:
