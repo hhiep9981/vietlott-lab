@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vietlott Lab</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.6.0/echarts.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6;
+  --series-1-soft: #cde2fb;
+  --series-2: #eb6834;
+  --ref: #52514e;
+  --div-neg-2: #184f95; --div-neg-1: #86b6ef; --div-mid: #f0efec;
+  --div-pos-1: #f3a9a8; --div-pos-2: #b8302f;
+  --good: #0ca30c; --good-text: #006300; --critical: #d03b3b;
+  --ball: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-1-soft: #104281; --series-2: #d95926; --ref: #c3c2b7;
+    --div-neg-2: #6da7ec; --div-neg-1: #1c5cab; --div-mid: #383835;
+    --div-pos-1: #9b2f2e; --div-pos-2: #f08b8a;
+    --good-text: #0ca30c; --ball: #262624;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+  --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+  --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --series-1-soft: #104281; --series-2: #d95926; --ref: #c3c2b7;
+  --div-neg-2: #6da7ec; --div-neg-1: #1c5cab; --div-mid: #383835;
+  --div-pos-1: #9b2f2e; --div-pos-2: #f08b8a;
+  --good-text: #0ca30c; --ball: #262624;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page); color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 1280px; margin: 0 auto; padding: 0 16px 64px; }
+header.top {
+  position: sticky; top: 0; z-index: 10; background: var(--page);
+  border-bottom: 1px solid var(--border);
+}
+.top-inner {
+  max-width: 1280px; margin: 0 auto; padding: 12px 16px;
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+}
+.brand { font-weight: 650; font-size: 16px; margin-right: auto; }
+.brand small { color: var(--muted); font-weight: 400; margin-left: 8px; }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tab, .seg button, .theme-btn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
+  padding: 6px 12px; border-radius: 8px; cursor: pointer; font: inherit;
+}
+.tab[aria-selected="true"], .seg button[aria-pressed="true"] {
+  background: var(--ink); color: var(--page); border-color: var(--ink);
+}
+.theme-btn { padding: 6px 10px; }
+.notice {
+  margin: 20px 0 8px; padding: 12px 16px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
+}
+.notice b { color: var(--ink); }
+h2 { font-size: 18px; margin: 36px 0 4px; font-weight: 650; }
+h2 + p.lede { margin: 0 0 14px; color: var(--ink-2); max-width: 820px; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); }
+.grid.tiles { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px; min-width: 0;
+}
+.card.wide { grid-column: 1 / -1; }
+.card h3 { margin: 0 0 2px; font-size: 14px; font-weight: 600; }
+.card .sub { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; }
+.card-head { display: flex; justify-content: space-between; gap: 8px; align-items: start; flex-wrap: wrap; }
+.seg { display: inline-flex; gap: 4px; }
+.seg button { padding: 3px 10px; font-size: 12.5px; }
+.chart { width: 100%; height: 300px; }
+.chart.tall { height: 420px; }
+.chart.sq { height: 520px; }
+.tile .label { color: var(--ink-2); font-size: 12.5px; }
+.tile .value { font-size: 26px; font-weight: 650; margin-top: 2px; }
+.tile .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.verdict { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.verdict.ok { color: var(--good-text); }
+.verdict.bad { color: var(--critical); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink-2); font-weight: 600; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scroll { overflow-x: auto; }
+.balls { display: flex; gap: 6px; flex-wrap: wrap; }
+.ball {
+  width: 34px; height: 34px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-weight: 600;
+  border: 1.5px solid var(--series-1); background: var(--ball); color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.ball.sp { border-color: var(--div-pos-2); }
+.ball.sm { width: 26px; height: 26px; font-size: 12px; }
+.ticket { padding: 10px 0; border-bottom: 1px solid var(--grid); }
+.ticket:last-child { border-bottom: 0; }
+.ticket .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+ul.facts { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); }
+ul.facts li { margin: 4px 0; }
+.legend-inline { display: flex; gap: 14px; color: var(--ink-2); font-size: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.sw.line { height: 2px; vertical-align: 3px; }
+.views { display: flex; gap: 2px; flex-wrap: wrap; }
+.view-btn {
+  border: 0; background: none; color: var(--ink-2); padding: 6px 10px; border-radius: 8px;
+  cursor: pointer; font: inherit; font-weight: 550;
+}
+.view-btn[aria-current="page"] { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--border); }
+.sub-bar { max-width: 1280px; margin: 0 auto; padding: 0 16px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sub-bar .label { color: var(--muted); font-size: 12.5px; }
+.ball.hit { background: var(--series-1); color: #fff; }
+.ball.click, [data-ticket] { cursor: pointer; }
+[data-ticket]:hover .ball { box-shadow: 0 0 0 2px var(--series-1-soft); }
+.minitabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0 12px; }
+.minitabs button {
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
+  padding: 6px 14px; border-radius: 999px; cursor: pointer; font: inherit;
+}
+.minitabs button[aria-selected="true"] { background: var(--ink); color: var(--page); border-color: var(--ink); }
+.controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.controls label { display: inline-flex; gap: 6px; align-items: center; color: var(--ink-2); font-size: 13px; }
+input[type="text"], input[type="number"], select {
+  font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; min-width: 0;
+}
+input[type="text"] { width: min(100%, 320px); }
+input[type="number"] { width: 84px; }
+button.primary {
+  font: inherit; font-weight: 600; border: 1px solid var(--ink); background: var(--ink); color: var(--page);
+  padding: 7px 16px; border-radius: 8px; cursor: pointer;
+}
+button.primary[disabled] { opacity: .5; cursor: default; }
+button.ghost { font: inherit; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+.progress { height: 6px; background: var(--grid); border-radius: 3px; overflow: hidden; margin: 8px 0; }
+.progress > div { height: 100%; background: var(--series-1); width: 0; }
+.tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); white-space: nowrap; }
+.err { color: var(--critical); }
+.muted { color: var(--muted); }
+dialog#ticket-dlg {
+  width: min(960px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--page); color: var(--ink);
+}
+dialog#ticket-dlg::backdrop { background: rgba(0,0,0,.45); }
+.dlg-head { position: sticky; top: 0; background: var(--page); padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 12px; align-items: center; z-index: 1; }
+.dlg-body { padding: 4px 16px 20px; }
+.dlg-body h3 { font-size: 15px; margin: 18px 0 6px; }
+.info h2 { margin-top: 28px; }
+.info p, .info li { color: var(--ink-2); max-width: 860px; }
+.info dt { font-weight: 600; margin-top: 10px; }
+.info dd { margin: 2px 0 0 0; color: var(--ink-2); max-width: 860px; }
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0; }
+.toc a { color: var(--ink-2); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 13px; background: var(--surface); }
+footer { color: var(--muted); font-size: 12px; margin-top: 40px; }
+a { color: var(--series-1); }
+@media (max-width: 600px) {
+  .chart { height: 260px; } .chart.sq { height: 380px; }
+  .tile .value { font-size: 22px; }
+  header.top { position: static; }
+  .top-inner { padding: 10px 16px 6px; gap: 6px; }
+  .brand { width: calc(100% - 52px); }
+  .brand small { display: block; margin-left: 0; }
+  #theme { order: 1; }
+  .views { order: 2; width: 100%; flex-wrap: nowrap; overflow-x: auto; }
+  .view-btn { white-space: nowrap; padding: 6px 8px; }
+  .sub-bar .label { display: none; }
+  .sub-bar .tabs { flex-wrap: nowrap; overflow-x: auto; }
+  .tab { white-space: nowrap; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">Vietlott Lab <small id="gen"></small></div>
+    <nav class="views" id="views" aria-label="Mục"></nav>
+    <button class="theme-btn" id="theme" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện sáng/tối">◐</button>
+  </div>
+  <div class="sub-bar" id="game-bar"><span class="label">Sản phẩm</span><nav class="tabs" id="tabs" role="tablist"></nav></div>
+</header>
+<main class="wrap" id="app"></main>
+
+<main class="wrap" id="app"></main>
+<dialog id="ticket-dlg" aria-label="Phân tích bộ số"></dialog>
+
+<script>
+const DATA = /*__DATA__*/null;
+/*__JS__*/
+</script>
+</body>
+</html>

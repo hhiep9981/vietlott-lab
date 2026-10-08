@@ -157,13 +157,78 @@ def structure(draws: Draws, n_sim: int = 100_000, seed: int = 0) -> dict:
         "obs": np.bincount(rep, minlength=g.drawn + 1).tolist(),
         "exp": [round(v, 1) for v in _hypergeom_counts(g.pool, g.drawn, g.drawn, n - 1)],
     }
-    # range buckets of 10
-    edges = list(range(0, g.pool, 10))
-    labels = [f"{a + 1}-{min(a + 10, g.pool)}" for a in edges]
-    cnt = [int(draws.onehot[:, a + 1 : min(a + 10, g.pool) + 1].sum()) for a in edges]
-    exp = [n * g.drawn * (min(a + 10, g.pool) - a) / g.pool for a in edges]
-    out["buckets"] = {"labels": labels, "obs": cnt, "exp": [round(v, 1) for v in exp]}
+    out["buckets"] = buckets(draws, 10)
+    out["buckets5"] = buckets(draws, 5)
     return out
+
+
+def buckets(draws: Draws, size: int) -> dict:
+    """Counts per range of `size` numbers (1-10, 11-20, ...) vs expectation."""
+    g = draws.game
+    n = len(draws)
+    edges = list(range(0, g.pool, size))
+    labels = [f"{a + 1}-{min(a + size, g.pool)}" for a in edges]
+    cnt = [int(draws.onehot[:, a + 1 : min(a + size, g.pool) + 1].sum()) for a in edges]
+    exp = [n * g.drawn * (min(a + size, g.pool) - a) / g.pool for a in edges]
+    return {"size": size, "labels": labels, "obs": cnt, "exp": [round(v, 1) for v in exp]}
+
+
+def _wait_stats(events: np.ndarray, p: float, label: str) -> dict:
+    """Waiting time (in draws) between draws where a boolean event occurs."""
+    idx = np.flatnonzero(events)
+    waits = np.diff(idx)
+    k_max = max(2, int(np.ceil(np.log(1e-3) / np.log(1 - p)))) if p < 1 else 2
+    hist = np.bincount(np.minimum(waits, k_max), minlength=k_max + 1)[1:]
+    ks = np.arange(1, k_max + 1)
+    exp = len(waits) * (1 - p) ** (ks - 1) * p
+    exp[-1] = len(waits) * (1 - p) ** (k_max - 1)
+    return {
+        "label": label,
+        "p_theory": p,
+        "p_obs": float(events.mean()),
+        "n_events": int(len(idx)),
+        "mean_wait_theory": 1 / p,
+        "mean_wait_obs": float(waits.mean()) if len(waits) else None,
+        "max_wait": int(waits.max()) if len(waits) else None,
+        "current": int(len(events) - 1 - idx[-1]) if len(idx) else len(events),
+        "hist_k": ks.tolist(),
+        "hist_obs": hist.tolist(),
+        "hist_exp": exp.round(1).tolist(),
+    }
+
+
+def waiting_times(draws: Draws) -> dict | None:
+    """How long until a draw has (a) >=1 adjacent pair, (b) >=1 repeat.
+
+    Exact per-draw probabilities: k-subsets of 1..N with no two consecutive
+    numbers number C(N-k+1, k); no overlap with the previous draw has
+    probability C(N-k, k) / C(N, k).
+    """
+    g = draws.game
+    if g.key == "keno":
+        return None
+    n_pool, k = g.pool, g.drawn
+    oh = draws.onehot[:, 1:]
+    adj = (oh[:, 1:] & oh[:, :-1]).any(axis=1)
+    rep = np.concatenate([[False], (oh[1:] & oh[:-1]).any(axis=1)])
+    p_adj = 1 - comb(n_pool - k + 1, k) / comb(n_pool, k)
+    p_rep = 1 - comb(n_pool - k, k) / comb(n_pool, k)
+    return {
+        "adjacent": _wait_stats(adj, p_adj, "Có ít nhất 1 cặp số liền nhau"),
+        "repeat": _wait_stats(rep[1:], p_rep, "Có ít nhất 1 số lặp từ kỳ trước"),
+    }
+
+
+def history(draws: Draws) -> dict | None:
+    """Compact full history for in-browser search, popup and backtest."""
+    if draws.game.key == "keno":
+        return None
+    return {
+        "dates": draws.dates.tolist(),
+        "ids": draws.ids.tolist(),
+        "main": draws.main.tolist(),
+        "special": draws.special.tolist(),
+    }
 
 
 def period_heatmap(draws: Draws) -> dict:
@@ -192,18 +257,22 @@ def period_heatmap(draws: Draws) -> dict:
     return {"periods": labels, "draws_per_period": n_per, "cells": cells}
 
 
-def special(draws: Draws) -> dict | None:
+def special(draws: Draws, recent: int = 100) -> dict | None:
     g = draws.game
     if g.special is None:
         return None
     s = draws.special[draws.special > 0]
     k = g.pool if g.special == "bonus" else g.special_pool
     counts = np.bincount(s, minlength=k + 1)[1:]
+    r = s[-recent:]
     return {
         "label": "Bonus number" if g.special == "bonus" else "Special number (1-12)",
         "numbers": list(range(1, k + 1)),
         "counts": counts.tolist(),
         "expected": len(s) / k,
+        "recent_n": len(r),
+        "counts_recent": np.bincount(r, minlength=k + 1)[1:].tolist(),
+        "expected_recent": len(r) / k,
     }
 
 
@@ -257,6 +326,8 @@ def describe(draws: Draws, recent: int) -> dict:
         "heatmap": period_heatmap(draws),
         "special": special(draws),
         "recent_draws": recent_draws(draws),
+        "waiting": waiting_times(draws),
+        "history": history(draws),
     }
     if g.key == "keno":
         out["keno_sides"] = keno_sides(draws)

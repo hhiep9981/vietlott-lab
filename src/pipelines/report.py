@@ -1,7 +1,6 @@
 """Run every analysis for all games and build the static HTML dashboard."""
 
 import json
-from dataclasses import asdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -18,7 +17,6 @@ from src.models.strategies import ALL_STRATEGIES
 from src.models.unseen_pool import UnseenPoolStrategy
 from src.pipelines.suggest import (
     keno_suggest,
-    suggest,
     suggest_unseen_pool,
     value_summary,
 )
@@ -26,7 +24,20 @@ from src.utils.log import get_logger
 
 logger = get_logger(__name__)
 
-TEMPLATE = Path(__file__).resolve().parent / "dashboard_template.html"
+WEB_DIR = Path(__file__).resolve().parent / "web"
+TEMPLATE = WEB_DIR / "template.html"
+# Concatenated in this order into the page (plain scripts, shared scope).
+JS_FILES = (
+    "core.js",
+    "model.js",
+    "popup.js",
+    "analysis.js",
+    "suggest.js",
+    "search.js",
+    "backtest.js",
+    "info.js",
+    "app.js",
+)
 
 # Backtest settings per game: (tickets per draw, max evaluated draws)
 BACKTEST_SETTINGS = {
@@ -78,7 +89,6 @@ def analyse_game(key: str, n_suggest: int = 6, run_bt: bool = True) -> dict:
     if key == "keno":
         out["suggest"] = keno_suggest(n_suggest)
     else:
-        out["suggest"] = {"tickets": [asdict(s) for s in suggest(draws, n_suggest)]}
         out["unseen_pool"] = suggest_unseen_pool(draws, n=10)
         out["value"]["ev_curve"] = ev_curve(game)
         out["value"]["tiers"] = prize_tiers(game)
@@ -102,7 +112,14 @@ def render_html(payload: str | None = None) -> Path:
     """Render the dashboard; without payload, reuse outputs/analysis.json."""
     if payload is None:
         payload = (OUTPUT_DIR / "analysis.json").read_text(encoding="utf-8")
-    html = TEMPLATE.read_text(encoding="utf-8").replace("/*__DATA__*/null", payload)
+    js = "\n".join(
+        (WEB_DIR / "js" / name).read_text(encoding="utf-8") for name in JS_FILES
+    )
+    html = (
+        TEMPLATE.read_text(encoding="utf-8")
+        .replace("/*__JS__*/", js)
+        .replace("/*__DATA__*/null", payload)
+    )
     path = OUTPUT_DIR / "dashboard.html"
     path.write_text(html, encoding="utf-8")
     logger.info(f"Dashboard written: {path} ({path.stat().st_size / 1e6:.2f} MB)")
