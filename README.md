@@ -23,6 +23,16 @@ merged in as a fallback source.
   combinations filtered by a normal sum band, odd/low counts and in-ticket
   spacing, weighted 4 hot / 4 cold / 2 balanced (backtested: no lift).
 
+## Dashboard
+- **Phân tích** — frequency, gaps, waiting times, pairs, structure, tests,
+  backtest, expected value.
+- **Gợi ý số** — personal daily sets per visitor (generated in the browser,
+  no IP/personal data): Hot, Cold, Random, Pattern, Weird.
+- **Tra cứu** — search past draws by numbers.
+- **Backtest** — run any strategy walk-forward against Random in the browser.
+- **Phương pháp** — terms, tests, strategies and methodology.
+- Click any ticket for a detailed analysis popup.
+
 ## Findings (Oct 2026)
 - No product shows a statistically significant deviation from fair draws.
 - No strategy beats random picking (0/10 on lotto products, 0/9 on Keno).

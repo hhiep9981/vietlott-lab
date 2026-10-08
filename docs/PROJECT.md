@@ -61,3 +61,6 @@ GitHub-hosted runners. Local `vietlott-data/` clone is read-only.
 bash scripts/setup_runner.sh          # install VN self-hosted runner (once)
 ```
 Outputs: `outputs/dashboard.html` (open directly), `outputs/analysis.json`.
+Dashboard views: Phân tích · Gợi ý số (Nóng/Lạnh/Ngẫu nhiên/Pattern/Mẫu lạ) ·
+Tra cứu · Backtest (in-browser) · Phương pháp. Click any ticket for analysis.
+After editing only `src/pipelines/web/*`, re-render with `dashboard --render-only`.

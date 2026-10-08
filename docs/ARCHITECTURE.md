@@ -20,9 +20,20 @@ Lottery/
 │   │   ├── backtest.py     walk-forward backtest + t-test + Holm
 │   │   ├── suggest.py      anti-popular ticket suggester, Keno spot, EV
 │   │   ├── report.py       run all games -> analysis.json + dashboard.html
-│   │   └── dashboard_template.html
+│   │   └── web/
+│   │       ├── template.html   page shell + CSS (light/dark tokens)
+│   │       └── js/             bundled in JS_FILES order (shared scope)
+│   │           ├── core.js     format, charts, storage, seeded RNG, maths
+│   │           ├── model.js    lotto state, 5 strategies, rules, scoring
+│   │           ├── popup.js    ticket analysis dialog
+│   │           ├── analysis.js "Phân tích" view
+│   │           ├── suggest.js  "Gợi ý số" view (per-visitor sets)
+│   │           ├── search.js   "Tra cứu" view
+│   │           ├── backtest.js "Backtest" view (in-browser walk-forward)
+│   │           ├── info.js     "Phương pháp" view
+│   │           └── app.js      router #view/game, tabs, theme
 │   └── utils/log.py
-├── tests/test_core.py
+├── tests/test_core.py · tests/test_web.py · tests/js/check_model.js (Node)
 ├── .github/workflows/
 │   ├── crawl.yml           self-hosted VN runner: crawl 07:00, 13:30 & 22:30 VN
 │   └── update-dashboard.yml cloud fallback 01:30 VN: merge upstream, build, deploy
@@ -33,9 +44,11 @@ Lottery/
 
 Data flow: `crawl.yml` (VN runner, upstream crawler code) → `data/` ←
 `update-dashboard.yml` merges upstream `data/` (fallback) → build → Pages.
-Per-visitor tickets: `dashboard_template.html` re-implements the unseen-pool
-sampler in JS (`generateTickets`, seeded by device id + date) — keep it in
-sync with `src/models/unseen_pool.py` when rules change.
+Browser side: the dashboard embeds full lotto history (`describe()["history"]`)
+and runs strategies, search, popup and backtest in JS (`web/js/model.js`).
+Rules/frequency z mirror `src/models/unseen_pool.py` — keep both in sync.
+Per-visitor seed = device id (localStorage) + VN date + product + strategy +
+filter flag + counter. Keno is analysis-only (no history embedded).
 
 Data dir resolution: `$VIETLOTT_DATA_DIR` > `./data` > `vietlott-data/data`.
 
@@ -139,6 +152,9 @@ Design notes
 | `special` | `(draws) -> dict \| None` | Special number counts | `#transform` |
 | `recent_draws` | `(draws, n=30) -> list[dict]` | Latest results | `#transform` |
 | `keno_sides` | `(draws) -> dict` | Big/even count distributions | `#transform` |
+| `buckets` | `(draws, size) -> dict` | Counts per range of `size` numbers vs expected | `#transform` |
+| `waiting_times` | `(draws) -> dict \| None` | Wait until a draw has an adjacent pair / a repeat (lotto) | `#eval` |
+| `history` | `(draws) -> dict \| None` | Compact full history for the browser (lotto) | `#io` |
 | `describe` | `(draws, recent) -> dict` | All of the above | `#transform` |
 
 ### src/pipelines/backtest.py
@@ -165,9 +181,26 @@ Design notes
 | `ev_curve` | `(game, points=60) -> dict` | RTP vs jackpot series | `#eval` |
 | `analyse_game` | `(key, n_suggest=6, run_bt=True) -> dict` | All analyses for one game | `#io` |
 | `build` | `(games=None, run_bt=True) -> Path` | Write analysis.json + dashboard | `#io #json` |
-| `render_html` | `(payload=None) -> Path` | Render template from JSON | `#io` |
+| `render_html` | `(payload=None) -> Path` | Bundle web/js + data into template | `#io` |
 
 ### src/utils/log.py
 | Function | Signature | Purpose | Tags |
 |----------|-----------|---------|------|
 | `get_logger` | `(name: str) -> logging.Logger` | Stdlib logger | `#log` |
+
+### src/pipelines/web/js (browser)
+| Function | Signature | Purpose | Tags |
+|----------|-----------|---------|------|
+| `seededRng` | `(seed) -> () => number` | mulberry32 seeded by hash32(seed) | `#predict` |
+| `weightedPick` | `(rng, w, k) -> number[]` | k distinct 1-based picks prop. to weights | `#predict` |
+| `hypergeom` / `comb` | `(pool, drawn, pick, m)` | Exact odds | `#eval` |
+| `getModel` | `(key) -> model` | Draws, prize table, final state (cached) | `#io` |
+| `LottoState.update` | `(draw)` | Walk-forward counts, history, profiles | `#train` |
+| `LottoState.cache` | getter | freqZ, hot/cold classes, rules, profiles | `#transform` |
+| `profileOf` | `(state, nums) -> profile` | Composition: hot/cold/mid, repeats, adjacent | `#transform` |
+| `passesRules` | `(nums, rules) -> bool` | Standard filter (sum/odd/low/gap/adjacent) | `#validate` |
+| `generate` | `(state, strategy, rng, n, {filters}) -> tickets` | hot/cold/random/pattern/weird tickets | `#predict` |
+| `scoreTicket` | `(model, draw, ticket) -> {matches, sHit, prize}` | Official prize lookup | `#eval` |
+| `ticketFeatures` / `simShapes` | `(model, nums)` | Shape features; 20k random baseline | `#eval` |
+| `openTicket` | `(key, nums, special, ctx)` | Ticket analysis popup | `#eval` |
+| `runBacktest` | `(model, strategy, n, evalN, filters, seed)` | Chunked walk-forward vs Random | `#eval` |

@@ -66,6 +66,27 @@ Done
 ## 2026-10-08
 - Added a 07:00 VN crawl (cron `0 0 * * *` UTC) to `crawl.yml`.
 
+## 2026-10-08 — Dashboard v2
+- Single-page app: Phân tích · Gợi ý số · Tra cứu · Backtest · Phương pháp
+  (hash routing `#view/game`). JS split into `src/pipelines/web/js/*`.
+- (#1) Search past draws by numbers (contains all / ≥k overlap), overlap
+  distribution vs hypergeometric expectation.
+- (#2) Method page: terms, tests, strategies, filters, backtest, limits.
+- (#3) Special number all / last-100 filter. (#4) Buckets of 5 / 10.
+- (#5) Waiting time until a draw has an adjacent pair / a repeat from the
+  previous draw (exact p: 1-C(N-k+1,k)/C(N,k), 1-C(N-k,k)/C(N,k)).
+- (#6) Ticket popup on any ball group: per-number stats, composition,
+  shape probabilities vs 20k random tickets, prize odds, history overlaps.
+- (#7) Suggest tabs Hot / Cold / Random / Pattern (+ #8 Weird), filter
+  toggle; Pattern samples learned compositions. Old anti-popular and fixed
+  unseen-pool sections removed from the page (Python functions kept, CLI).
+- (#9) In-browser backtest vs Random (~250 draws/s, MessageChannel yield).
+  Example 6/55 full period, Pattern 10 tickets: lift −1.92% (CI −3.76…−0.08),
+  Random seeds spread ±2.5% → noise; 1 in 20 runs is "significant" by luck.
+- Keno: analysis only (user choice). 44 tests (incl. Node JS model checks).
+- Note: user's local edit to crawl.yml (cron "0 2" = 09:00 VN, comment says
+  07:00) left uncommitted — pending user decision.
+
 Next / ideas
 - Add historical jackpot values (if a source is found) → "play only when
   jackpot ≥ break-even" backtest, and jackpot-sharing estimates.
