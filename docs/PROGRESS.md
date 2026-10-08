@@ -84,8 +84,7 @@ Done
   Example 6/55 full period, Pattern 10 tickets: lift −1.92% (CI −3.76…−0.08),
   Random seeds spread ±2.5% → noise; 1 in 20 runs is "significant" by luck.
 - Keno: analysis only (user choice). 44 tests (incl. Node JS model checks).
-- Note: user's local edit to crawl.yml (cron "0 2" = 09:00 VN, comment says
-  07:00) left uncommitted — pending user decision.
+- Morning crawl moved to 09:00 VN (cron `0 2 * * *` UTC) at the user's request.
 
 Next / ideas
 - Add historical jackpot values (if a source is found) → "play only when

@@ -35,7 +35,7 @@ Lottery/
 │   └── utils/log.py
 ├── tests/test_core.py · tests/test_web.py · tests/js/check_model.js (Node)
 ├── .github/workflows/
-│   ├── crawl.yml           self-hosted VN runner: crawl 07:00, 13:30 & 22:30 VN
+│   ├── crawl.yml           self-hosted VN runner: crawl 09:00, 13:30 & 22:30 VN
 │   └── update-dashboard.yml cloud fallback 01:30 VN: merge upstream, build, deploy
 ├── scripts/setup_runner.sh install/remove the self-hosted runner (launchd)
 ├── outputs/                generated (dashboard.html, analysis.json)
