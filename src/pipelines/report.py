@@ -9,17 +9,15 @@ import numpy as np
 
 from src.analysis.descriptive import describe
 from src.analysis.randomness import run_all
-from src.config import GAMES, OUTPUT_DIR, GameConfig, keno_game
+from src.config import GAMES, OUTPUT_DIR, POOL_LOG, GameConfig, keno_game
 from src.data.loader import load_draws
+from src.data.pool_log import append_pool, game_log
 from src.models.prizes import ev_vs_jackpot, prize_tiers
 from src.pipelines.backtest import run_backtest
 from src.models.strategies import ALL_STRATEGIES
+from src.models.pool_optimizer import optimise_pool
 from src.models.unseen_pool import UnseenPoolStrategy
-from src.pipelines.suggest import (
-    keno_suggest,
-    suggest_unseen_pool,
-    value_summary,
-)
+from src.pipelines.suggest import keno_suggest, value_summary
 from src.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -32,6 +30,7 @@ JS_FILES = (
     "model.js",
     "popup.js",
     "analysis.js",
+    "pool.js",
     "suggest.js",
     "search.js",
     "backtest.js",
@@ -66,7 +65,26 @@ def ev_curve(game: GameConfig, points: int = 60) -> dict:
     return {"jackpot": js.tolist(), "rtp": ev_vs_jackpot(game, js).tolist()}
 
 
-def analyse_game(key: str, n_suggest: int = 6, run_bt: bool = True) -> dict:
+def log_pool(key: str, pool: dict) -> bool:
+    """Record the published next-draw pool (no-op if already logged)."""
+    f = pool["final"]
+    record = {
+        "game": key,
+        "after_id": f["after_id"],
+        "after_date": f["after_date"],
+        "logged_at": datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime(
+            "%Y-%m-%d %H:%M"
+        ),
+        "k": f["k"],
+        "pool": f["pool"],
+        "weights": f["weights"],
+    }
+    return append_pool(POOL_LOG, record)
+
+
+def analyse_game(
+    key: str, n_suggest: int = 6, run_bt: bool = True, log: bool = False
+) -> dict:
     game = GAMES[key]
     logger.info(f"=== {game.name} ===")
     draws = load_draws(game)
@@ -89,19 +107,24 @@ def analyse_game(key: str, n_suggest: int = 6, run_bt: bool = True) -> dict:
     if key == "keno":
         out["suggest"] = keno_suggest(n_suggest)
     else:
-        out["unseen_pool"] = suggest_unseen_pool(draws, n=10)
+        out["pool"] = optimise_pool(draws)
+        if log:
+            log_pool(key, out["pool"])
+        out["pool"]["log"] = game_log(POOL_LOG, key)
         out["value"]["ev_curve"] = ev_curve(game)
         out["value"]["tiers"] = prize_tiers(game)
     return out
 
 
-def build(games: list[str] | None = None, run_bt: bool = True) -> Path:
+def build(
+    games: list[str] | None = None, run_bt: bool = True, log: bool = False
+) -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     data = {
         "generated": datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime(
             "%Y-%m-%d %H:%M (GMT+7)"
         ),
-        "games": {k: analyse_game(k, run_bt=run_bt) for k in (games or GAMES)},
+        "games": {k: analyse_game(k, run_bt=run_bt, log=log) for k in (games or GAMES)},
     }
     payload = json.dumps(data, default=_json_default, ensure_ascii=False)
     (OUTPUT_DIR / "analysis.json").write_text(payload, encoding="utf-8")

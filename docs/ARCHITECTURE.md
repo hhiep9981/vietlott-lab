@@ -9,10 +9,12 @@ Lottery/
 │   ├── config.py           GameConfig, prize tables, paths, tax
 │   ├── data/loader.py      jsonl -> Draws (numpy)
 │   ├── data/merge.py       union of two data dirs by draw id
+│   ├── data/pool_log.py    append-only log of published pools
 │   ├── models/
 │   │   ├── prizes.py       exact odds, EV/RTP, ticket scoring
 │   │   ├── strategies.py   9 online walk-forward strategies
-│   │   └── unseen_pool.py  never-drawn pool + distribution rules strategy
+│   │   ├── unseen_pool.py  never-drawn pool + distribution rules strategy
+│   │   └── pool_optimizer.py walk-forward optimised K-number pool (9 features)
 │   ├── analysis/
 │   │   ├── randomness.py   statistical test battery
 │   │   └── descriptive.py  dashboard statistics
@@ -24,16 +26,17 @@ Lottery/
 │   │       ├── template.html   page shell + CSS (light/dark tokens)
 │   │       └── js/             bundled in JS_FILES order (shared scope)
 │   │           ├── core.js     format, charts, storage, seeded RNG, maths
-│   │           ├── model.js    lotto state, 5 strategies, rules, scoring
+│   │           ├── model.js    lotto state, rules, profiles, scoring
+│   │           ├── pool.js     pool features/scores (mirror of pool_optimizer.py)
 │   │           ├── popup.js    ticket analysis dialog
 │   │           ├── analysis.js "Phân tích" view
-│   │           ├── suggest.js  "Gợi ý số" view (per-visitor sets)
+│   │           ├── suggest.js  "Pool số" view (optimised pool + validation)
 │   │           ├── search.js   "Tra cứu" view
-│   │           ├── backtest.js "Backtest" view (in-browser walk-forward)
+│   │           ├── backtest.js "Backtest" view (pool: K + weight sliders)
 │   │           ├── info.js     "Phương pháp" view
 │   │           └── app.js      router #view/game, tabs, theme
 │   └── utils/log.py
-├── tests/test_core.py · tests/test_web.py · tests/js/check_model.js (Node)
+├── tests/test_core.py · tests/test_pool.py · tests/test_web.py · tests/js/check_model.js (Node)
 ├── .github/workflows/
 │   ├── crawl.yml           self-hosted VN runner: crawl 09:00, 13:30 & 22:30 VN
 │   └── update-dashboard.yml cloud fallback 01:30 VN: merge upstream, build, deploy
@@ -45,10 +48,14 @@ Lottery/
 Data flow: `crawl.yml` (VN runner, upstream crawler code) → `data/` ←
 `update-dashboard.yml` merges upstream `data/` (fallback) → build → Pages.
 Browser side: the dashboard embeds full lotto history (`describe()["history"]`)
-and runs strategies, search, popup and backtest in JS (`web/js/model.js`).
-Rules/frequency z mirror `src/models/unseen_pool.py` — keep both in sync.
-Per-visitor seed = device id (localStorage) + VN date + product + strategy +
-filter flag + counter. Keno is analysis-only (no history embedded).
+and runs search, popup and the pool backtest in JS. Rules/frequency z in
+`web/js/model.js` mirror `src/models/unseen_pool.py`; pool features in
+`web/js/pool.js` mirror `src/models/pool_optimizer.py` — keep both in sync
+(`tests/test_web.py::test_js_pool_matches_python` checks pools and hits are
+identical). `update-dashboard.yml` builds with `--log-pool`, appending each
+published next-draw pool to `data/pool_log.jsonl` (one record per game and
+`after_id`; local builds don't log). "Kết quả gần nhất" compares each draw
+with the logged pool, else a pool reconstructed with the train-only weights. Keno is analysis-only (no history embedded).
 
 Data dir resolution: `$VIETLOTT_DATA_DIR` > `./data` > `vietlott-data/data`.
 
@@ -56,6 +63,13 @@ Flow: `loader` → `Draws` → (`descriptive`, `randomness`, `backtest`,
 `suggest`) → `report.build` → JSON embedded into the HTML template.
 
 Design notes
+- Pool optimiser: features at row t use draws < t, standardised across
+  numbers; score = features · w; pool = top K (ties -> smaller number).
+  Search 2F single-feature + 500 random unit directions × K grid. K is chosen
+  by `select_k` (inner 70/30: w per K fit on the head, K by validation z of
+  mean hits vs the hypergeometric null on the tail, w refit on the window) —
+  used for the 70/30 hold-out, each of 6 rolling outer folds (nested
+  walk-forward over the last 60%), and on all draws for the next-draw pool.
 - Walk-forward: strategies are online (`update` one draw, then `tickets`);
   no look-ahead by construction (tested).
 - Significance: per-draw mean matches vs hypergeometric expectation
@@ -89,6 +103,12 @@ Design notes
 | `merge_records` | `(primary, secondary) -> list[dict]` | Union by id, primary wins, sorted | `#merge` |
 | `merge_jsonl` | `(dst: Path, src: Path) -> int` | Merge file in place, return added | `#io #merge` |
 | `merge_dirs` | `(dst_dir: Path, src_dir: Path) -> dict[str, int]` | Merge all product files | `#io #merge` |
+
+### src/data/pool_log.py
+| Function | Signature | Purpose | Tags |
+|----------|-----------|---------|------|
+| `append_pool` | `(path: Path, record: dict) -> bool` | Append unless (game, after_id) already logged | `#io #json` |
+| `game_log` | `(path: Path, game: str) -> list[dict]` | One game's logged pools, oldest first | `#io #json` |
 
 ### src/models/prizes.py
 | Function | Signature | Purpose | Tags |
@@ -157,6 +177,17 @@ Design notes
 | `history` | `(draws) -> dict \| None` | Compact full history for the browser (lotto) | `#io` |
 | `describe` | `(draws, recent) -> dict` | All of the above | `#transform` |
 
+### src/models/pool_optimizer.py
+| Function | Signature | Purpose | Tags |
+|----------|-----------|---------|------|
+| `pool_features` | `(onehot: np.ndarray) -> np.ndarray` | (T+1, N, F) standardised features, row t from draws < t: freq all/10/30/100, absence, last, pair, Markov lag 1/2 | `#transform` |
+| `hits_by_rank` | `(X, target, W) -> np.ndarray` | Winning numbers among top-r scores for every weight vector | `#eval` |
+| `candidate_weights` | `(seed, n) -> np.ndarray` | ±single features + random unit directions | `#train` |
+| `pool_stats` | `(hits, expected) -> PoolStats` | Lift, CI95, t-test p vs random pool | `#eval` |
+| `select_k` | `(hits, idx, e, sd) -> (m, j, val_z)` | Nested rule on training rows: w per K on first 70%, K by validation z on the rest, w refit on all | `#train #validate` |
+| `nested_folds` | `(hits, e, sd, ks, dates) -> dict` | 6 rolling outer folds: K per fold, pooled OOS lift, OOS lift per K | `#eval` |
+| `optimise_pool` | `(draws, k_grid=None, seed=SEED, n_weights=500) -> dict` | Hold-out + nested folds + per-K table + next-draw pool payload | `#train #predict` |
+
 ### src/pipelines/backtest.py
 | Function | Signature | Purpose | Tags |
 |----------|-----------|---------|------|
@@ -170,7 +201,7 @@ Design notes
 |----------|-----------|---------|------|
 | `popularity` | `(ticket, game, last, history) -> (float, list[str])` | Heuristic popularity score | `#predict` |
 | `suggest` | `(draws, n=5, max_overlap=None, strategy=None, n_candidates=50000, seed=None) -> list[Suggestion]` | Anti-popular, diversified tickets | `#predict` |
-| `suggest_unseen_pool` | `(draws, n=10, seed=None) -> dict` | 10 never-drawn tickets (4 hot / 4 cold / 2 balanced) + rules + `client` payload for the in-browser generator | `#predict` |
+| `suggest_unseen_pool` | `(draws, n=10, seed=None) -> dict` | 10 never-drawn tickets (4 hot / 4 cold / 2 balanced) + rules (CLI `suggest --unseen`; no longer in the dashboard) | `#predict` |
 | `keno_suggest` | `(n=5, spot=None, seed=None) -> dict` | Best-RTP spot + random tickets | `#predict` |
 | `breakeven_jackpot` | `(game) -> float \| None` | Jackpot where RTP = 100% | `#eval` |
 | `value_summary` | `(game) -> dict` | RTP / break-even summary | `#eval` |
@@ -179,8 +210,9 @@ Design notes
 | Function | Signature | Purpose | Tags |
 |----------|-----------|---------|------|
 | `ev_curve` | `(game, points=60) -> dict` | RTP vs jackpot series | `#eval` |
-| `analyse_game` | `(key, n_suggest=6, run_bt=True) -> dict` | All analyses for one game | `#io` |
-| `build` | `(games=None, run_bt=True) -> Path` | Write analysis.json + dashboard | `#io #json` |
+| `log_pool` | `(key, pool: dict) -> bool` | Record the published next-draw pool | `#io` |
+| `analyse_game` | `(key, n_suggest=6, run_bt=True, log=False) -> dict` | All analyses for one game (+ pool, pool log) | `#io` |
+| `build` | `(games=None, run_bt=True, log=False) -> Path` | Write analysis.json + dashboard | `#io #json` |
 | `render_html` | `(payload=None) -> Path` | Bundle web/js + data into template | `#io` |
 
 ### src/utils/log.py
@@ -192,15 +224,19 @@ Design notes
 | Function | Signature | Purpose | Tags |
 |----------|-----------|---------|------|
 | `seededRng` | `(seed) -> () => number` | mulberry32 seeded by hash32(seed) | `#predict` |
-| `weightedPick` | `(rng, w, k) -> number[]` | k distinct 1-based picks prop. to weights | `#predict` |
 | `hypergeom` / `comb` | `(pool, drawn, pick, m)` | Exact odds | `#eval` |
 | `getModel` | `(key) -> model` | Draws, prize table, final state (cached) | `#io` |
 | `LottoState.update` | `(draw)` | Walk-forward counts, history, profiles | `#train` |
 | `LottoState.cache` | getter | freqZ, hot/cold classes, rules, profiles | `#transform` |
 | `profileOf` | `(state, nums) -> profile` | Composition: hot/cold/mid, repeats, adjacent | `#transform` |
 | `passesRules` | `(nums, rules) -> bool` | Standard filter (sum/odd/low/gap/adjacent) | `#validate` |
-| `generate` | `(state, strategy, rng, n, {filters}) -> tickets` | hot/cold/random/pattern/weird tickets | `#predict` |
 | `scoreTicket` | `(model, draw, ticket) -> {matches, sHit, prize}` | Official prize lookup | `#eval` |
 | `ticketFeatures` / `simShapes` | `(model, nums)` | Shape features; 20k random baseline | `#eval` |
 | `openTicket` | `(key, nums, special, ctx)` | Ticket analysis popup | `#eval` |
-| `runBacktest` | `(model, strategy, n, evalN, filters, seed)` | Chunked walk-forward vs Random | `#eval` |
+| `poolFeatures` | `(model) -> Float64Array` | Mirror of `pool_features` (cached on model) | `#transform` |
+| `poolScores` / `poolAt` | `(model, t, w[, K])` | Scores / top-K pool before draw t | `#predict` |
+| `poolBacktest` | `(model, w, K, start) -> [{t, pool, hits}]` | Walk-forward pool hits | `#eval` |
+| `poolLift` | `(hits, expected) -> {mean, lift, lo, hi, p}` | Lift vs random pool | `#eval` |
+| `weightsChart` / `excessChart` | `(id, ...)` | Weight bars; cumulative hits − expected | `#eval` |
+| `poolHistory` | `(model, P) -> [{t, K, pool, source, hits, ranks}]` | Pool before each draw: logged, else reconstructed (train-only w); score rank of each winner | `#eval` |
+| `recentVsPoolHtml` / `drawRankChart` | `(key, G)` | Recent results vs pool table, summary tiles, winners-by-rank chart | `#eval` |

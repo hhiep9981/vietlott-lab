@@ -4,7 +4,8 @@
 Research workspace for four Vietlott products: **Power 6/55, Mega 6/45,
 Lotto 5/35, Keno**.
 
-1. Find an optimal, *statistically verified* play strategy and suggest tickets.
+1. Find an optimal, *statistically verified* play strategy and suggest a
+   number pool (since 2026-10-15; previously individual tickets).
 2. Static HTML dashboard: frequency, gaps, pairs/triplets, draw structure,
    randomness tests, backtest, expected value.
 
@@ -31,6 +32,14 @@ Lotto 5/35, Keno**.
     jackpot. Used by the suggester.
 - Unseen-pool method (never-drawn combos + normal sum band + spacing rules +
   hot/cold/balanced weighting): no lift vs random in walk-forward backtest.
+- Optimised pool (2026-10-15; 9 features incl. Markov lag 1/2, 514 weight
+  vectors × K grid, 70/30 train/test): train lift +5…+11% for every K
+  (selection bias), held-out lift −4.2% (6/55, K=14), −3.1% (6/45, K=8),
+  −2.9% (5/35, K=14), all CIs cover 0 — no better than a random pool.
+- Nested walk-forward K selection (6 rolling folds over the last 60%): the
+  chosen K changes from fold to fold (6/55: 13·9·14·13·13·17; 6/45:
+  8·8·18·18·12·14; 5/35: 12·8·14·15·15·15); pooled out-of-sample lift −1.8%
+  / −1.7% / +1.4%, and every K's out-of-sample CI covers 0 — no optimal K.
 
 ## Stack
 Python 3.12 (`.venv`, uv) · polars · numpy · scipy · pytest ·

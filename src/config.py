@@ -32,6 +32,8 @@ def resolve_data_dir() -> Path:
 
 DATA_DIR = resolve_data_dir()
 OUTPUT_DIR = ROOT / "outputs"
+# Published next-draw pools, one record per (game, after_id); tracked in git
+POOL_LOG = ROOT / "data" / "pool_log.jsonl"
 
 TICKET_PRICE = 10_000
 SEED = 2026

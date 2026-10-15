@@ -26,11 +26,12 @@ merged in as a fallback source.
 ## Dashboard
 - **Phân tích** — frequency, gaps, waiting times, pairs, structure, tests,
   backtest, expected value.
-- **Gợi ý số** — personal daily sets per visitor (generated in the browser,
-  no IP/personal data): Hot, Cold, Random, Pattern, Weird.
+- **Pool số** — one K-number pool per product for the next draw, optimised
+  walk-forward on past draws (frequency, absence, repeats, pairs, Markov
+  lag 1/2) and validated on held-out draws against a random pool.
 - **Tra cứu** — search past draws by numbers.
-- **Backtest** — run any strategy walk-forward against Random in the browser.
-- **Phương pháp** — terms, tests, strategies and methodology.
+- **Backtest** — pick K and feature weights, see pool hits per draw vs random.
+- **Phương pháp** — terms, tests, pool method and methodology.
 - Click any ticket for a detailed analysis popup.
 
 ## Findings (Oct 2026)

@@ -135,15 +135,6 @@ function store(k, v) {
   try { localStorage.setItem(k, v); } catch (e) {}
   return null;
 }
-function deviceId() {
-  let id = store("vl-device");
-  if (!id) {
-    id = Array.from(crypto.getRandomValues(new Uint32Array(2)), (x) => x.toString(16).padStart(8, "0")).join("");
-    store("vl-device", id);
-  }
-  return id;
-}
-const todayVN = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 
 /* ---------- seeded RNG ---------- */
 function hash32(str) {
@@ -172,19 +163,6 @@ function shuffle(rng, arr) {
 }
 /* k distinct items from `items` (default 1..n) uniformly */
 function sampleUniform(rng, items, k) { return shuffle(rng, items).slice(0, k); }
-/* k distinct indices 1..w.length, prop. to weights (successive draws) */
-function weightedPick(rng, w, k) {
-  const ws = w.slice();
-  let total = ws.reduce((a, b) => a + b, 0);
-  const out = [];
-  while (out.length < k) {
-    let r = rng() * total, i = 0;
-    while (i < ws.length - 1 && r >= ws[i]) { r -= ws[i]; i++; }
-    if (ws[i] <= 0) { i = ws.findIndex((v) => v > 0); }
-    out.push(i + 1); total -= ws[i]; ws[i] = 0;
-  }
-  return out.sort((a, b) => a - b);
-}
 
 /* ---------- maths ---------- */
 function comb(n, k) {

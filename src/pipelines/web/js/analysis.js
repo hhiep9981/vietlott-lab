@@ -130,13 +130,13 @@ function renderAnalysis(key) {
     </tbody></table></div></div>`}
 
   <h2>Kết quả gần nhất</h2>
-  ${isKeno ? "" : `<p class="lede">Bấm vào một bộ số để xem phân tích chi tiết.</p>`}
-  <div class="card scroll"><table><thead><tr><th>Ngày</th><th>Kỳ</th><th>Bộ số</th></tr></thead><tbody>
-  ${G.recent_draws.slice(0, isKeno ? 15 : 20).map((d) => `<tr><td>${d.date}</td><td>#${d.id}</td><td>${ballsHtml(d.main, d.special, { click: !isKeno, ctx: d })}</td></tr>`).join("")}
-  </tbody></table></div>`;
+  ${isKeno ? `<div class="card scroll"><table><thead><tr><th>Ngày</th><th>Kỳ</th><th>Bộ số</th></tr></thead><tbody>
+  ${G.recent_draws.slice(0, 15).map((d) => `<tr><td>${d.date}</td><td>#${d.id}</td><td>${ballsHtml(d.main, d.special, { click: false })}</td></tr>`).join("")}
+  </tbody></table></div>` : recentVsPoolHtml(key, G)}`;
 
   document.getElementById("app").innerHTML = html;
   drawAnalysisCharts(key, G);
+  if (!isKeno) drawRankChart(key, G);
 }
 
 function drawAnalysisCharts(key, G) {
@@ -282,4 +282,66 @@ function drawAnalysisCharts(key, G) {
       }],
     });
   }
+}
+
+/* "Kết quả gần nhất" for lotto: each draw vs the pool suggested before it */
+function recentVsPoolHtml(key, G) {
+  const m = getModel(key), P = G.pool, F = P.final, N = m.pool, d0 = m.pick;
+  const hist = poolHistory(m, P), byT = new Map(hist.map((r) => [r.t, r]));
+  const idxById = new Map(m.draws.map((d, i) => [d.id, i]));
+  const test = hist.filter((r) => r.source !== "train"), logged = hist.filter((r) => r.source === "log");
+  const n = test.length, sumHits = test.reduce((a, r) => a + r.hits, 0);
+  const meanK = test.reduce((a, r) => a + r.K, 0) / n;
+  const allRanks = test.flatMap((r) => r.ranks);
+  const meanRank = allRanks.reduce((a, b) => a + b, 0) / allRanks.length;
+  const logE = logged.reduce((a, r) => a + r.K * d0 / N, 0), logH = logged.reduce((a, r) => a + r.hits, 0);
+  const tag = (src) => `<span class="tag" title="${esc(POOL_SOURCE[src][1])}">${POOL_SOURCE[src][0]}</span>`;
+  const ranksHtml = (r) => r.ranks.slice().sort((a, b) => a - b).map((x) => x <= r.K ? `<b>${x}</b>` : `<span class="muted">${x}</span>`).join(" · ");
+  const rows = G.recent_draws.slice(0, 20).map((d) => {
+    const r = byT.get(idxById.get(d.id));
+    if (!r) return `<tr><td>${d.date}</td><td>#${d.id}</td><td>${ballsHtml(d.main, d.special, { ctx: d })}</td><td colspan="3" class="muted">Chưa đủ dữ liệu để tạo pool</td></tr>`;
+    const inPool = new Set(r.pool);
+    return `<tr><td>${d.date}</td><td>#${d.id}</td><td>${ballsHtml(d.main, d.special, { ctx: d, hits: inPool })}</td>
+      <td class="num"><b>${r.hits}</b>/${d0} <span class="muted">(kỳ vọng ${fmt(r.K * d0 / N, 2)})</span></td>
+      <td style="font-variant-numeric:tabular-nums;white-space:nowrap">${ranksHtml(r)}</td>
+      <td>${ballsHtml(r.pool, null, { hits: new Set(d.main), click: false })}<div class="muted" style="font-size:12px;margin-top:2px">${r.K} số · ${tag(r.source)}</div></td></tr>`;
+  }).join("");
+  return `
+  <p class="lede">Mỗi kỳ so với pool gợi ý <i>trước</i> kỳ đó. Ở cột Bộ số, số tô xanh là số trúng nằm trong pool; ở cột Pool, số tô xanh là số đã trúng.
+  "Hạng điểm": thứ hạng của từng số trúng trong bảng điểm của pool (1 = điểm cao nhất, in đậm = nằm trong pool). Bấm vào một bộ số để xem phân tích chi tiết.</p>
+  <div class="card scroll"><table><thead><tr><th>Ngày</th><th>Kỳ</th><th>Bộ số</th><th class="num">Trong pool</th><th>Hạng điểm các số trúng</th><th>Pool trước kỳ</th></tr></thead><tbody>
+  <tr><td>Kỳ tới</td><td class="muted">—</td><td class="muted">Chưa quay</td><td></td><td></td><td>${ballsHtml(F.pool, null, { click: false })}<div class="muted" style="font-size:12px;margin-top:2px">${F.k} số · <a href="#suggest/${key}">pool hiện tại</a></div></td></tr>
+  ${rows}
+  </tbody></table></div>
+
+  <h3 style="margin-top:20px">Số trúng so với pool — tổng hợp</h3>
+  <p class="lede">Tính trên ${fmt(n)} kỳ không dùng khi dò trọng số (từ ${P.split_date}${logged.length ? `, gồm ${fmt(logged.length)} kỳ có pool đã công bố` : ""}). Nếu cách chấm điểm có tác dụng, số trúng phải dồn về các hạng đầu; nếu không, chúng rải đều mọi hạng.</p>
+  <div class="grid tiles">
+    ${tile("Số trúng trong pool / kỳ", fmt(sumHits / n, 3), `Pool ngẫu nhiên ${fmt(meanK, 0)} số: ${fmt(meanK * d0 / N, 3)}`)}
+    ${tile("Tỉ lệ số trúng rơi vào pool", pct(sumHits / (n * d0)), `Ngẫu nhiên: ${pct(meanK / N)} (= K ÷ ${N})`)}
+    ${tile("Hạng điểm TB của số trúng", fmt(meanRank, 1), `Ngẫu nhiên: ${fmt((N + 1) / 2, 1)} · thấp hơn = tốt hơn`)}
+    ${tile("Pool đã công bố", logged.length ? `${fmt(logH)} / ${fmt(logged.length * d0)}` : "Chưa có", logged.length ? `số trúng trong pool · kỳ vọng ${fmt(logE, 1)}` : "Bắt đầu ghi nhật ký từ lần cập nhật tới")}
+  </div>
+  <div class="grid" style="margin-top:16px">
+    <div class="card wide"><h3>Số trúng theo hạng điểm</h3><p class="sub">Mỗi cột: số lần một số trúng có hạng điểm đó. Xanh: các hạng nằm trong pool (K = ${P.chosen.k}). Đường xám: kỳ vọng nếu điểm không liên quan đến kết quả.</p>
+      ${legendInline("Số trúng", "Kỳ vọng nếu ngẫu nhiên")}<div id="c-rank" class="chart"></div></div>
+  </div>`;
+}
+function drawRankChart(key, G) {
+  const m = getModel(key), P = G.pool, N = m.pool, K = P.chosen.k;
+  const test = poolHistory(m, P).filter((r) => r.source !== "train");
+  const cnt = new Array(N).fill(0);
+  test.forEach((r) => r.ranks.forEach((x) => cnt[x - 1]++));
+  const exp = test.length * m.pick / N;
+  mk("c-rank", {
+    grid: { left: 8, right: 16, top: 24, bottom: 30, containLabel: true },
+    xAxis: axis({ type: "category", data: range1(N), name: "Hạng điểm (1 = cao nhất)", nameLocation: "middle", nameGap: 26, splitLine: { show: false }, axisLabel: { color: css("--muted"), fontSize: 11, interval: 4 } }),
+    yAxis: axis({ type: "value" }),
+    tooltip: { formatter: (p) => `Hạng ${p[0].name}${p[0].dataIndex < K ? " (trong pool)" : ""}<br>${p[0].value} lần · kỳ vọng ${fmt(exp, 1)}` },
+    series: [{
+      type: "bar", barCategoryGap: "15%",
+      data: cnt.map((c, i) => ({ value: c, itemStyle: { color: css(i < K ? "--series-1" : "--ref"), opacity: i < K ? 1 : 0.45, borderRadius: [3, 3, 0, 0] } })),
+      markLine: refLine(exp, "Kỳ vọng " + fmt(exp, 1)),
+    }],
+  });
 }

@@ -74,7 +74,7 @@ jobs:
       - name: Build dashboard
         if: steps.data.outputs.changed == 'true'
         run: |
-          .venv/bin/python -m src.main dashboard
+          .venv/bin/python -m src.main dashboard --log-pool
           echo "${{ steps.data.outputs.hash }}" > outputs/data.sha256
 
       - name: Commit data and outputs

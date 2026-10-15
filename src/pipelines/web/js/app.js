@@ -1,7 +1,7 @@
 /* app.js — router (#view/game), product tabs, theme. Loaded last. */
 const VIEWS = [
   ["analysis", "Phân tích", renderAnalysis],
-  ["suggest", "Gợi ý số", renderSuggest],
+  ["suggest", "Pool số", renderSuggest],
   ["search", "Tra cứu", renderSearch],
   ["backtest", "Backtest", renderBacktest],
   ["info", "Phương pháp", renderInfo],
@@ -21,7 +21,6 @@ function navigate(view = state.view, game = state.game) {
   render();
 }
 function render() {
-  if (btJob) btJob.stop = true;
   const dlg = document.getElementById("ticket-dlg");
   if (dlg.open) dlg.close();
   disposeAll();

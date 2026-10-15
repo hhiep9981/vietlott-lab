@@ -1,16 +1,8 @@
-/* model.js — lotto game model shared by Suggest, Backtest and the ticket popup.
-   Walk-forward state mirrors src/models/unseen_pool.py (frequency z, rules);
-   strategies: hot, cold, random, pattern (learned composition profiles),
-   weird (unusual shapes). Only 6/55, 6/45, 5/35. */
+/* model.js — lotto game model shared by Pool, Backtest and the ticket popup:
+   draws, prize table and walk-forward state (frequency z, hot/cold classes,
+   shape rules, composition profiles). Only 6/55, 6/45, 5/35. */
 const RECENT_WINDOW = 150;
 const PROFILE_WARMUP = 30;
-const STRATEGIES = {
-  hot: { label: "Nóng", desc: "Ưu tiên số về nhiều hơn kỳ vọng (tần suất cao)." },
-  cold: { label: "Lạnh", desc: "Ưu tiên số về ít hơn kỳ vọng (tần suất thấp)." },
-  random: { label: "Ngẫu nhiên", desc: "Mọi số có cơ hội như nhau — mốc so sánh chuẩn." },
-  pattern: { label: "Pattern", desc: "Học từ lịch sử 'công thức' của bộ trúng (số nóng/lạnh/trung bình, số lặp kỳ trước, cặp liền nhau) rồi sinh vé theo công thức, tỷ lệ với tần suất xuất hiện của từng công thức." },
-  weird: { label: "Mẫu lạ", desc: "Bộ số có hình dạng bất thường: cấp số cộng, chuỗi liên tiếp, cùng chữ số tận cùng, cùng nhóm, bội số, toàn chẵn/lẻ, tổng cực trị." },
-};
 const models = {};
 
 function getModel(key) {
@@ -151,124 +143,5 @@ function profileOf(st, nums) {
   return { h, c, mid, r, a, key: `${h}|${c}|${mid}|${r}|${a}` };
 }
 const profileLabel = (p) => `${p.h} nóng · ${p.c} lạnh · ${p.mid} TB · ${p.r} lặp kỳ trước · ${p.a} cặp liền`;
-function parseProfile(key) { const [h, c, mid, r, a] = key.split("|").map(Number); return { h, c, mid, r, a, key }; }
 
-function modeWeights(z, mode) {
-  return z.map((v) => (mode === "hot" ? Math.exp(v) : mode === "cold" ? Math.exp(-v) : Math.exp(-0.5 * v * v)));
-}
-
-/* ---------- candidates per strategy ---------- */
-function patternCandidate(st, rng) {
-  const C = st.cache;
-  if (!C.profTotal) return { cand: sampleUniform(rng, range1(st.m.pool), st.m.pick).sort((a, b) => a - b), label: "Chưa đủ dữ liệu — ngẫu nhiên" };
-  let r = rng() * C.profTotal, key = C.profiles[0][0];
-  for (const [k, n] of C.profiles) { if (r < n) { key = k; break; } r -= n; }
-  const p = parseProfile(key);
-  const N = st.m.pool;
-  const hot = [], cold = [], mid = [];
-  for (let v = 1; v <= N; v++) (C.cls[v] === 1 ? hot : C.cls[v] === -1 ? cold : mid).push(v);
-  if (p.h > hot.length || p.c > cold.length || p.mid > mid.length) return null;
-  for (let i = 0; i < 300; i++) {
-    const cand = [...sampleUniform(rng, hot, p.h), ...sampleUniform(rng, cold, p.c), ...sampleUniform(rng, mid, p.mid)].sort((a, b) => a - b);
-    const q = profileOf(st, cand);
-    if (q.r === p.r && q.a === p.a) return { cand, label: profileLabel(p) };
-  }
-  return null;
-}
 const range1 = (n) => Array.from({ length: n }, (_, i) => i + 1);
-
-const WEIRD_TEMPLATES = [
-  function ap(st, rng) {
-    const { pool: N, pick: k } = st.m;
-    const d = 1 + Math.floor(rng() * Math.floor((N - 1) / (k - 1)));
-    const s = 1 + Math.floor(rng() * (N - (k - 1) * d));
-    return { cand: range1(k).map((i) => s + (i - 1) * d), label: d === 1 ? `${k} số liên tiếp` : `Cấp số cộng, bước ${d}` };
-  },
-  function run(st, rng) {
-    const { pool: N, pick: k } = st.m;
-    const L = 4 + Math.floor(rng() * (k - 3));
-    const s = 1 + Math.floor(rng() * (N - L + 1));
-    const runNums = range1(L).map((i) => s + i - 1);
-    const rest = range1(N).filter((v) => v < s - 1 || v > s + L);
-    const extra = sampleUniform(rng, rest, k - L);
-    return { cand: [...runNums, ...extra].sort((a, b) => a - b), label: `Chuỗi ${L} số liên tiếp` };
-  },
-  function digit(st, rng) {
-    const { pool: N, pick: k } = st.m;
-    const ok = range1(10).map((d) => d % 10).filter((d) => range1(N).filter((v) => v % 10 === d).length >= k);
-    if (!ok.length) return null;
-    const d = ok[Math.floor(rng() * ok.length)];
-    return { cand: sampleUniform(rng, range1(N).filter((v) => v % 10 === d), k).sort((a, b) => a - b), label: `Cùng chữ số tận cùng ${d}` };
-  },
-  function decade(st, rng) {
-    const { pool: N, pick: k } = st.m;
-    const ok = [];
-    for (let a = 0; a < N; a += 10) if (Math.min(a + 10, N) - a >= k) ok.push(a);
-    if (!ok.length) return null;
-    const a = ok[Math.floor(rng() * ok.length)];
-    const nums = range1(Math.min(a + 10, N) - a).map((i) => a + i);
-    return { cand: sampleUniform(rng, nums, k).sort((x, y) => x - y), label: `Cùng nhóm ${a + 1}–${Math.min(a + 10, N)}` };
-  },
-  function multiples(st, rng) {
-    const { pool: N, pick: k } = st.m;
-    const ms = [];
-    for (let q = 3; q <= Math.floor(N / k); q++) ms.push(q);
-    if (!ms.length) return null;
-    const q = ms[Math.floor(rng() * ms.length)];
-    return { cand: sampleUniform(rng, range1(Math.floor(N / q)).map((i) => i * q), k).sort((a, b) => a - b), label: `Toàn bội số của ${q}` };
-  },
-  function parity(st, rng) {
-    const { pool: N, pick: k } = st.m;
-    const odd = rng() < 0.5;
-    return { cand: sampleUniform(rng, range1(N).filter((v) => v % 2 === (odd ? 1 : 0)), k).sort((a, b) => a - b), label: odd ? "Toàn số lẻ" : "Toàn số chẵn" };
-  },
-  function extremeSum(st, rng) {
-    const { pool: N, pick: k } = st.m;
-    const low = rng() < 0.5, span = 2 * k;
-    const nums = low ? range1(span) : range1(span).map((i) => N - span + i);
-    const cand = sampleUniform(rng, nums, k).sort((a, b) => a - b);
-    return { cand, label: `Tổng cực ${low ? "thấp" : "cao"} (${cand.reduce((a, b) => a + b, 0)})` };
-  },
-  function repeatLast(st, rng) {
-    const { pool: N, pick: k } = st.m;
-    if (!st.last) return null;
-    const keep = sampleUniform(rng, st.last, k - 1);
-    const other = sampleUniform(rng, range1(N).filter((v) => !st.last.includes(v)), 1);
-    return { cand: [...keep, ...other].sort((a, b) => a - b), label: `Giữ ${k - 1} số của kỳ trước` };
-  },
-];
-
-/* n tickets for a strategy from a state; deterministic for a given rng */
-function generate(st, strategy, rng, n, { filters = true } = {}) {
-  const m = st.m, C = st.cache, R = C.rules;
-  const out = [];
-  let overlapMax = Math.floor(m.pick / 2);
-  const weird = strategy === "weird" ? shuffle(rng, WEIRD_TEMPLATES) : null;
-  const useFilters = filters && strategy !== "weird";
-  const w = strategy === "hot" || strategy === "cold" ? modeWeights(C.freqZ, strategy) : null;
-  for (let i = 0; i < n; i++) {
-    let ticket = null;
-    for (let tries = 0; !ticket; tries++) {
-      if (tries === 3000) overlapMax++;
-      if (tries > 20000) throw new Error("Không tìm được vé thỏa điều kiện");
-      let res;
-      if (strategy === "hot" || strategy === "cold") res = { cand: weightedPick(rng, w, m.pick), label: "" };
-      else if (strategy === "random") res = { cand: sampleUniform(rng, range1(m.pool), m.pick).sort((a, b) => a - b), label: "" };
-      else if (strategy === "pattern") res = patternCandidate(st, rng);
-      else res = weird[(i + tries) % weird.length](st, rng);
-      if (!res || !res.cand) continue;
-      const cand = res.cand;
-      if (st.history.has(cand.join("-"))) continue;
-      if (useFilters && !passesRules(cand, R)) continue;
-      if (out.some((o) => overlapCount(o.numbers, cand) > overlapMax)) continue;
-      ticket = { numbers: cand, label: res.label };
-    }
-    if (m.specialType === "separate") {
-      ticket.special = (strategy === "hot" || strategy === "cold") && C.spZ
-        ? weightedPick(rng, modeWeights(C.spZ, strategy), 1)[0]
-        : 1 + Math.floor(rng() * m.specialPool);
-    }
-    out.push(ticket);
-  }
-  return out;
-}

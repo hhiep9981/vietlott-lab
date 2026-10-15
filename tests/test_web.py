@@ -12,6 +12,7 @@ import pytest
 from src.analysis.descriptive import buckets, history, special, waiting_times
 from src.config import GAMES, LOTTO_535, POWER_655
 from src.data.loader import load_draws
+from src.models.pool_optimizer import optimise_pool
 from src.models.prizes import prize_tiers
 from src.pipelines.report import JS_FILES, WEB_DIR
 
@@ -75,6 +76,7 @@ def js_results(tmp_path_factory):
             "meta": {"key": key, "name": g.name, "pool": g.pool, "drawn": g.drawn},
             "value": {"tiers": prize_tiers(g)},
             "history": history(d),
+            "pool": optimise_pool(d, n_weights=60),
         }
     path = tmp_path_factory.mktemp("web") / "data.json"
     path.write_text(json.dumps({"games": games}))
@@ -88,19 +90,31 @@ def js_results(tmp_path_factory):
 
 
 @pytest.mark.parametrize("key", LOTTO_KEYS)
-def test_js_strategies_valid(js_results, key):
+def test_js_model_state(js_results, key):
     r = js_results[key]
     assert r["historySize"] <= r["nDraws"] and r["profiles"] > 10
-    for name, s in r["strategies"].items():
-        assert s["n"] == 10, name
-        assert s["deterministic"], name
-        assert s["valid"], name
-        assert s["inHistory"] == 0, name
-        assert s["special"], name
-        if name.endswith("+F") and not name.startswith("weird"):
-            assert s["passRules"] == 10, name
-    assert all(lbl for lbl in r["strategies"]["weird+F"]["labels"])
     assert r["hypergeomSum"] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("key", LOTTO_KEYS)
+def test_js_pool_matches_python(js_results, key):
+    """Browser features/scores/pools reproduce the Python optimiser exactly."""
+    g = GAMES[key]
+    pool = optimise_pool(load_draws(g), n_weights=60)
+    r = js_results[key]
+    assert r["finalPool"] == pool["final"]["pool"]
+    assert r["finalScores"] == pytest.approx(pool["final"]["scores"], abs=1e-3)
+    assert r["seriesHits"] == pool["series"]["hits"]
+    assert r["histHits"] == pool["series"]["hits"]  # no log -> reconstructed
+
+
+@pytest.mark.parametrize("key", LOTTO_KEYS)
+def test_js_pool_history_uses_log(js_results, key):
+    r = js_results[key]
+    assert r["histRanksOk"]
+    last = r["loggedLast"]
+    assert last["source"] == "log" and last["pool"] == list(range(1, 8))
+    assert last["hits"] == last["expectHits"]
 
 
 @pytest.mark.parametrize("key", LOTTO_KEYS)

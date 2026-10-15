@@ -1,184 +1,108 @@
-/* backtest.js — interactive walk-forward backtest in the browser.
-   For each evaluated draw t: state = draws < t, generate tickets, score
-   against draw t. Strategy and Random run side by side on the same draws. */
-let btJob = null;
-/* yield to the UI between chunks; MessageChannel is not throttled like timers
-   in background tabs */
-const btChannel = new MessageChannel();
-let btNext = null;
-btChannel.port1.onmessage = () => { const f = btNext; btNext = null; if (f) f(); };
-const yieldThen = (fn) => { btNext = fn; btChannel.port2.postMessage(0); };
+/* backtest.js — interactive pool backtest: pick K and feature weights, see
+   how many winning numbers the pool would have caught, draw by draw
+   (walk-forward, see pool.js), versus a random pool of the same size. */
+const BT_PRESETS = {
+  chosen: "Tối ưu (đã kiểm tra)",
+  final: "Pool kỳ tới",
+  hot: "Nóng 30 kỳ",
+  cold: "Lạnh 30 kỳ",
+  absent: "Vắng lâu",
+  repeat: "Lặp kỳ trước",
+};
+
+function presetWeights(P, name) {
+  const w = P.features.map(() => 0), at = (k) => P.features.indexOf(k);
+  if (name === "chosen") return { w: P.chosen.weights.slice(), k: P.chosen.k };
+  if (name === "final") return { w: P.final.weights.slice(), k: P.final.k };
+  if (name === "hot") w[at("freq_30")] = 1;
+  if (name === "cold") w[at("freq_30")] = -1;
+  if (name === "absent") w[at("absence")] = 1;
+  if (name === "repeat") w[at("last")] = 1;
+  return { w, k: null };
+}
 
 function renderBacktest(key) {
   if (!LOTTO.includes(key)) {
-    document.getElementById("app").innerHTML = `<h2>Backtest</h2><p class="lede">Công cụ backtest chỉ hỗ trợ Power 6/55, Mega 6/45 và Lotto 5/35. Kết quả backtest Keno có ở mục Phân tích.</p>`;
+    document.getElementById("app").innerHTML = `<h2>Backtest</h2><p class="lede">Backtest pool chỉ hỗ trợ Power 6/55, Mega 6/45 và Lotto 5/35. Kết quả backtest Keno có ở mục Phân tích.</p>`;
     return;
   }
-  const m = getModel(key);
-  const nD = m.draws.length;
+  const G = DATA.games[key], P = G.pool, m = getModel(key);
+  const nD = m.draws.length, maxEval = nD - P.warmup;
   document.getElementById("app").innerHTML = `
-  <h2>Backtest chiến lược</h2>
-  <p class="lede">Giả lập mua vé theo một chiến lược qua các kỳ đã quay. Mỗi kỳ chỉ dùng dữ liệu <i>trước</i> kỳ đó (walk-forward), rồi so với chọn ngẫu nhiên trên cùng các kỳ. Jackpot tính ở mức tối thiểu, giá vé 10.000đ.</p>
+  <h2>Backtest pool</h2>
+  <p class="lede">Tự chọn kích thước pool và trọng số từng yếu tố, rồi xem pool đó lẽ ra đã chứa bao nhiêu số trúng ở mỗi kỳ. Mỗi kỳ chỉ dùng dữ liệu <i>trước</i> kỳ đó; so với pool chọn ngẫu nhiên cùng kích thước. Kết quả cập nhật ngay khi thay đổi.</p>
   <div class="card">
-    <form class="controls" id="bt-form" style="margin:0">
-      <label>Chiến lược <select id="bt-s">${Object.entries(STRATEGIES).filter(([k]) => k !== "random").map(([k, s]) => `<option value="${k}">${s.label}</option>`).join("")}</select></label>
-      <label>Vé mỗi kỳ <input type="number" id="bt-n" min="1" max="50" value="10"></label>
+    <div class="controls" style="margin:0 0 8px">
+      <label>Kích thước pool <select id="bt-k">${range1(m.pool - m.pick - 1).map((i) => i + m.pick).map((k) => `<option value="${k}">${k} số</option>`).join("")}</select></label>
       <label>Giai đoạn <select id="bt-p">
-        <option value="100">100 kỳ gần nhất</option><option value="300" selected>300 kỳ gần nhất</option>
-        <option value="500">500 kỳ gần nhất</option><option value="all">Toàn bộ (${fmt(nD - 100)} kỳ)</option></select></label>
-      <label><input type="checkbox" id="bt-f" checked> Bộ lọc tiêu chuẩn</label>
-      <label>Seed <input type="text" id="bt-seed" value="1" style="width:80px"></label>
-      <button class="primary" type="submit" id="bt-run">Chạy</button>
-      <button class="ghost" type="button" id="bt-stop" disabled>Dừng</button>
-    </form>
-    <div class="progress"><div id="bt-bar"></div></div>
-    <p class="sub" id="bt-msg">Chọn tham số rồi bấm Chạy. 100 kỳ đầu luôn dùng để khởi tạo.</p>
+        <option value="100">100 kỳ gần nhất</option><option value="300">300 kỳ gần nhất</option>
+        <option value="test" selected>Giai đoạn kiểm tra (từ ${P.split_date})</option><option value="all">Toàn bộ (${fmt(maxEval)} kỳ)</option></select></label>
+    </div>
+    <div class="controls" style="margin:0 0 10px">${Object.entries(BT_PRESETS).map(([k, l]) => `<button class="ghost" type="button" data-preset="${k}">${l}</button>`).join("")}</div>
+    <div class="wgrid">${P.features.map((f, j) => `<label title="${esc(POOL_FEATURES[f][1])}"><span>${POOL_FEATURES[f][0]}</span>
+      <input type="range" min="-1" max="1" step="0.05" value="0" data-f="${j}"><output data-o="${j}">0</output></label>`).join("")}</div>
+    <p class="sub" id="bt-msg" style="margin-top:8px"></p>
   </div>
   <div id="bt-out"></div>`;
-  const pre = store("vl-bt-s");
-  if (pre && STRATEGIES[pre] && pre !== "random") document.getElementById("bt-s").value = pre;
-  document.getElementById("bt-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const s = document.getElementById("bt-s").value;
-    store("vl-bt-s", s);
-    const n = Math.max(1, Math.min(50, parseInt(document.getElementById("bt-n").value, 10) || 10));
-    const p = document.getElementById("bt-p").value;
-    const evalN = p === "all" ? nD - 100 : Math.min(Number(p), nD - 100);
-    runBacktest(m, s, n, evalN, document.getElementById("bt-f").checked, document.getElementById("bt-seed").value);
-  });
-  document.getElementById("bt-stop").addEventListener("click", () => { if (btJob) btJob.stop = true; });
-}
 
-function newAcc(m) {
-  return { cost: 0, gain: 0, matches: 0, tickets: 0, perDraw: [], cum: [], dist: new Array(m.pick + 1).fill(0), tiers: {}, big: [] };
-}
-function scoreInto(acc, m, d, tickets, label) {
-  let sumM = 0, gain = 0;
-  for (const t of tickets) {
-    const s = scoreTicket(m, d, t);
-    sumM += s.matches; gain += s.prize;
-    acc.dist[s.matches]++;
-    if (s.prize > 0) {
-      // only split by special number when it changes the prize (e.g. 6/55 5+bonus)
-      const split = m.prize[s.matches][0] !== m.prize[s.matches][1];
-      const k = `${s.matches}${split && s.sHit ? "+" : ""}`;
-      acc.tiers[k] = (acc.tiers[k] || 0) + 1;
-    }
-    if (s.matches >= m.pick - 1) acc.big.push({ d, t, s, label });
-  }
-  acc.cost += tickets.length * 10000; acc.gain += gain; acc.matches += sumM; acc.tickets += tickets.length;
-  acc.perDraw.push(sumM / tickets.length);
-  acc.cum.push(acc.gain - acc.cost);
-}
-function liftStats(acc, m) {
-  const e = m.pick * m.pick / m.pool;
-  const x = acc.perDraw, n = x.length;
-  const mean = x.reduce((a, b) => a + b, 0) / n;
-  const sd = Math.sqrt(x.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1));
-  const se = sd / Math.sqrt(n);
-  const z = (mean - e) / se;
-  return { mean, lift: (mean / e - 1) * 100, lo: ((mean - 1.96 * se) / e - 1) * 100, hi: ((mean + 1.96 * se) / e - 1) * 100, p: 2 * normSf(Math.abs(z)) };
-}
-
-function runBacktest(m, strategy, n, evalN, filters, seed) {
-  if (btJob) btJob.stop = true;
-  const job = { stop: false };
-  btJob = job;
-  const nD = m.draws.length, start = nD - evalN;
-  const st = new LottoState(m);
-  for (let i = 0; i < start; i++) st.update(m.draws[i]);
-  const A = newAcc(m), B = newAcc(m);
-  const rngA = seededRng(`bt|${m.key}|${strategy}|${filters}|${seed}`), rngB = seededRng(`bt|${m.key}|random|${filters}|${seed}`);
-  const bar = document.getElementById("bt-bar"), msg = document.getElementById("bt-msg");
-  document.getElementById("bt-run").disabled = true;
-  document.getElementById("bt-stop").disabled = false;
-  const t0 = performance.now();
-  let i = start;
-  const step = () => {
-    const until = performance.now() + 30;
-    try {
-      while (i < nD && performance.now() < until && !job.stop) {
-        const d = m.draws[i];
-        scoreInto(A, m, d, generate(st, strategy, rngA, n, { filters }), strategy);
-        scoreInto(B, m, d, generate(st, "random", rngB, n, { filters }), "random");
-        st.update(d);
-        i++;
-      }
-    } catch (e) {
-      msg.innerHTML = `<span class="err">${esc(e.message)}</span>`;
-      job.stop = true;
-    }
-    bar.style.width = `${((i - start) / evalN) * 100}%`;
-    if (i < nD && !job.stop) {
-      msg.textContent = `Đang chạy… ${fmt(i - start)} / ${fmt(evalN)} kỳ`;
-      yieldThen(step);
-      return;
-    }
-    document.getElementById("bt-run").disabled = false;
-    document.getElementById("bt-stop").disabled = true;
-    const done = i - start;
-    if (done < 2) return;
-    msg.textContent = `${job.stop ? "Đã dừng" : "Xong"}: ${fmt(done)} kỳ (${m.draws[start].date} → ${m.draws[i - 1].date}) · ${fmt(n)} vé/kỳ · ${fmt((performance.now() - t0) / 1000, 1)} giây`;
-    renderBacktestResults(m, strategy, A, B, start, done);
+  const kSel = document.getElementById("bt-k"), pSel = document.getElementById("bt-p");
+  const sliders = [...document.querySelectorAll(".wgrid input")];
+  // presets keep their exact weights; sliders (step 0.05) only show them
+  let exact = null;
+  const setWeights = (w) => { exact = w.slice(); sliders.forEach((s, j) => { s.value = String(w[j]); }); };
+  const read = () => exact || sliders.map((s) => Number(s.value));
+  let preset = "chosen";
+  const run = () => {
+    const w = read();
+    sliders.forEach((s, j) => (document.querySelector(`[data-o="${j}"]`).textContent = sign(w[j])));
+    const K = Number(kSel.value), p = pSel.value;
+    const start = p === "all" ? P.warmup : p === "test" ? P.warmup + P.split_index : nD - Number(p);
+    const t0 = performance.now();
+    const res = poolBacktest(m, w, K, start);
+    const zero = w.every((v) => v === 0);
+    document.getElementById("bt-msg").innerHTML = `${fmt(res.length)} kỳ (${m.draws[start].date} → ${m.draws[nD - 1].date}) · ${fmt(performance.now() - t0, 0)} ms${zero ? ' · <span class="err">Mọi trọng số bằng 0: pool luôn là các số nhỏ nhất.</span>' : ""}${preset === "final" ? ' · <span class="err">Trọng số này đã được dò trên chính các kỳ đang chấm, nên kết quả bị thổi phồng (quá khớp).</span>' : ""}`;
+    renderBacktestResults(m, K, res);
   };
-  yieldThen(step);
+  let timer = null;
+  const later = () => { clearTimeout(timer); timer = setTimeout(run, 120); };
+  sliders.forEach((s) => s.addEventListener("input", () => { preset = null; exact = null; later(); }));
+  kSel.addEventListener("change", run);
+  pSel.addEventListener("change", run);
+  document.querySelectorAll("[data-preset]").forEach((b) => b.addEventListener("click", () => {
+    const { w, k } = presetWeights(P, b.dataset.preset);
+    preset = b.dataset.preset;
+    setWeights(w);
+    if (k) kSel.value = String(k);
+    run();
+  }));
+  const { w, k } = presetWeights(P, "chosen");
+  setWeights(w);
+  kSel.value = String(k);
+  run();
 }
 
-function renderBacktestResults(m, strategy, A, B, start, done) {
-  const la = liftStats(A, m), lb = liftStats(B, m);
-  const name = STRATEGIES[strategy].label;
-  const roi = (acc) => (acc.gain / acc.cost - 1) * 100;
-  const tierKeys = [...new Set([...Object.keys(A.tiers), ...Object.keys(B.tiers)])].sort((a, b) => parseInt(b, 10) - parseInt(a, 10) || b.length - a.length);
-  const tierLabel = (k) => `${parseInt(k, 10)} số${k.endsWith("+") ? " + ĐB" : ""}`;
-  const luck = "Khi thử nhiều chiến lược/seed/giai đoạn, khoảng 1 trong 20 lần sẽ \"có ý nghĩa\" chỉ do may rủi — hãy chạy lại với seed và giai đoạn khác trước khi tin.";
-  const verdict = la.lo > 0
-    ? `<span class="verdict bad">Tốt hơn ngẫu nhiên có ý nghĩa ở mức 95%</span> (CI ${sign(la.lo)} … ${sign(la.hi)}). ${luck}`
-    : la.hi < 0
-      ? `<span class="verdict bad">Kém hơn ngẫu nhiên có ý nghĩa ở mức 95%</span> (CI ${sign(la.lo)} … ${sign(la.hi)}). ${luck}`
-      : `<span class="verdict ok">Không khác biệt có ý nghĩa so với ngẫu nhiên</span> — khoảng tin cậy 95% của lift chứa 0.`;
+function renderBacktestResults(m, K, res) {
+  const e = poolExpected(m, K), hits = res.map((r) => r.hits), L = poolLift(hits, e);
+  const dist = new Array(m.pick + 1).fill(0);
+  hits.forEach((h) => dist[h]++);
+  const expDist = range1(m.pick + 1).map((x) => x - 1).map((h) => res.length * comb(m.pick, h) * comb(m.pool - m.pick, K - h) / comb(m.pool, K));
+  const full = hits.filter((h) => h === m.pick).length;
+  const recent = res.slice(-12).reverse();
   document.getElementById("bt-out").innerHTML = `
   <div class="grid tiles" style="margin-top:16px">
-    ${tile(`ROI · ${name}`, `${fmt(roi(A), 1)}%`, `Chi ${vnd(A.cost)} · thưởng ${vnd(A.gain)}`)}
-    ${tile("ROI · Ngẫu nhiên", `${fmt(roi(B), 1)}%`, `Chi ${vnd(B.cost)} · thưởng ${vnd(B.gain)}`)}
-    ${tile(`Lift · ${name}`, `${sign(la.lift)}%`, `CI 95%: ${sign(la.lo)} … ${sign(la.hi)} · p = ${pval(la.p)}`)}
-    ${tile("Lift · Ngẫu nhiên", `${sign(lb.lift)}%`, `CI 95%: ${sign(lb.lo)} … ${sign(lb.hi)} · p = ${pval(lb.p)}`)}
+    ${tile("Số trúng TB / kỳ", fmt(L.mean, 3), `Pool ngẫu nhiên ${K} số: ${fmt(e, 3)}`)}
+    ${tile("Lift", `${sign(L.lift, 1)}%`, `CI 95%: ${sign(L.lo, 1)} … ${sign(L.hi, 1)} · p = ${pval(L.p)}`)}
+    ${tile(`Kỳ pool chứa đủ ${m.pick} số`, fmt(full), `Kỳ vọng ngẫu nhiên: ${fmt(expDist[m.pick], 1)}`)}
+    ${tile("Chi phí bao / kỳ", vnd(comb(K, m.pick) * 10000), `${fmt(comb(K, m.pick))} vé ${m.pick} số`)}
   </div>
-  <p style="margin:12px 0 0">${verdict}</p>
+  <p style="margin:12px 0 0">${poolVerdict(L.lo, L.hi)}</p>
   <div class="grid" style="margin-top:16px">
-    <div class="card wide"><h3>Lãi/lỗ cộng dồn (VND)</h3><p class="sub">Cùng số vé, cùng các kỳ. Đường dốc xuống đều là chi phí; các bước nhảy lên là kỳ trúng thưởng.</p>
-      <div class="legend-inline"><span><span class="sw line" style="background:var(--series-1)"></span>${name}</span><span><span class="sw line" style="background:var(--series-2)"></span>Ngẫu nhiên</span></div>
+    <div class="card wide"><h3>Số trúng dư so với ngẫu nhiên, cộng dồn</h3><p class="sub">Đi lên = pool chứa nhiều số trúng hơn pool ngẫu nhiên. Dao động lên xuống quanh 0 là bình thường với dữ liệu ngẫu nhiên.</p>
       <div id="bt-cum" class="chart"></div></div>
-    <div class="card"><h3>Phân bố số trúng mỗi vé</h3><p class="sub">Đường xám: kỳ vọng nếu ngẫu nhiên.</p>
-      <div class="legend-inline"><span><span class="sw" style="background:var(--series-1)"></span>${name}</span><span><span class="sw" style="background:var(--series-2)"></span>Ngẫu nhiên</span><span><span class="sw line" style="background:var(--ref)"></span>Kỳ vọng</span></div>
-      <div id="bt-dist" class="chart"></div></div>
-    <div class="card scroll"><h3>Số vé trúng thưởng theo giải</h3>
-      <table><thead><tr><th>Giải</th><th class="num">${name}</th><th class="num">Ngẫu nhiên</th><th class="num">Thưởng/vé</th></tr></thead><tbody>
-      ${tierKeys.length ? tierKeys.map((k) => `<tr><td>${tierLabel(k)}</td><td class="num">${fmt(A.tiers[k] || 0)}</td><td class="num">${fmt(B.tiers[k] || 0)}</td><td class="num">${vnd(m.prize[parseInt(k, 10)][k.endsWith("+") ? 1 : 0])}</td></tr>`).join("") : `<tr><td colspan="4" class="muted">Không có vé trúng thưởng.</td></tr>`}
-      </tbody></table>
-      ${A.big.length ? `<h3 style="margin-top:14px">Vé trúng ≥ ${m.pick - 1} số (${name})</h3><table><tbody>
-      ${A.big.slice(0, 10).map((b) => `<tr><td>${b.d.date}</td><td>${ballsHtml(b.t.numbers, b.t.special, { hits: new Set(b.d.main) })}</td><td class="num">${b.s.matches}${b.s.sHit ? " + ĐB" : ""}</td></tr>`).join("")}</tbody></table>` : ""}
-    </div>
+    <div class="card"><h3>Số trúng mỗi kỳ</h3><p class="sub">So với phân phối siêu bội.</p>${legendInline("Pool", "Kỳ vọng nếu ngẫu nhiên")}<div id="bt-dist" class="chart"></div></div>
+    <div class="card scroll"><h3>12 kỳ gần nhất</h3><p class="sub">Pool tại thời điểm trước kỳ quay; số tô xanh là số trúng.</p>
+      <table><tbody>${recent.map((r) => `<tr><td class="muted">${m.draws[r.t].date}</td><td>${ballsHtml(r.pool, null, { hits: new Set(m.draws[r.t].main), click: false })}</td><td class="num">${r.hits}</td></tr>`).join("")}</tbody></table></div>
   </div>`;
-  const dates = m.draws.slice(start, start + done).map((d) => d.date);
-  mk("bt-cum", {
-    grid: { left: 8, right: 24, top: 16, bottom: 8, containLabel: true },
-    tooltip: { trigger: "axis", axisPointer: { type: "line", lineStyle: { color: css("--axis") } }, formatter: (p) => `${p[0].axisValue}<br>${p.map((x) => `${x.seriesName}: ${vnd(x.value)}`).join("<br>")}` },
-    xAxis: axis({ type: "category", data: dates, splitLine: { show: false }, axisLabel: { color: css("--muted"), fontSize: 11, hideOverlap: true } }),
-    yAxis: axis({ type: "value", axisLabel: { color: css("--muted"), fontSize: 11, formatter: (v) => vnd(v) } }),
-    series: [
-      { name, type: "line", data: A.cum, showSymbol: false, lineStyle: { width: 2, color: css("--series-1") }, itemStyle: { color: css("--series-1") } },
-      { name: "Ngẫu nhiên", type: "line", data: B.cum, showSymbol: false, lineStyle: { width: 2, color: css("--series-2") }, itemStyle: { color: css("--series-2") } },
-    ],
-  });
-  const ks = range1(m.pick + 1).map((x) => x - 1);
-  mk("bt-dist", {
-    xAxis: axis({ type: "category", data: ks, name: "Số trúng", nameLocation: "middle", nameGap: 26, splitLine: { show: false } }),
-    yAxis: axis({ type: "value" }),
-    tooltip: { formatter: (p) => `${p[0].axisValue} số trúng<br>${p.map((x) => `${x.seriesName}: ${fmt(x.value, x.seriesName === "Kỳ vọng" ? 1 : 0)}`).join("<br>")}` },
-    series: [
-      { name, type: "bar", data: A.dist, itemStyle: barStyle("--series-1"), barGap: "10%" },
-      { name: "Ngẫu nhiên", type: "bar", data: B.dist, itemStyle: barStyle("--series-2") },
-      { name: "Kỳ vọng", type: "line", data: ks.map((k) => A.tickets * hypergeom(m.pool, m.pick, m.pick, k)), symbol: "circle", symbolSize: 8, lineStyle: { color: css("--ref"), width: 2 }, itemStyle: { color: css("--ref"), borderColor: css("--surface"), borderWidth: 2 } },
-    ],
-  });
+  excessChart("bt-cum", res.map((r) => m.draws[r.t].date), hits, e);
+  obsVsExp("bt-dist", range1(m.pick + 1).map((x) => x - 1), dist, expDist, { xName: "Số trúng trong pool", obsName: "Pool" });
 }

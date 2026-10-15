@@ -94,3 +94,33 @@ Next / ideas
 - Re-check Lotto 5/35 odd/even signal (raw p=0.008) as data grows; use a
   held-out period to confirm (pre-registered).
 - Keno: time-of-day analysis needs draw timestamps (not in data).
+
+## 2026-10-15 — Optimised number pool replaces ticket suggestions
+- `src/models/pool_optimizer.py`: per-draw features (freq all/10/30/100,
+  absence, last draw, pair with last draw, Markov lag-1 and lag-2
+  transitions), standardised across numbers; score = features · w; pool =
+  top K. Search ±single-feature + 500 random directions × K (6/x: 7–18,
+  5/35: 6–15) on 70% of draws, select by z, judge on held-out 30%, refit w
+  on all draws for the next-draw pool.
+- Markov order 2 implemented as an additive lag-2 transition term: the joint
+  two-draw state is far too sparse for ~1,000–1,400 draws.
+- Dashboard: "Gợi ý số" → "Pool số" (pool, cost of covering all
+  combinations, held-out verdict, per-K table, cumulative excess hits,
+  weights, per-number scores). Backtest view → pool backtest with K and
+  weight sliders + presets. Removed per-visitor ticket sets and Hot/Cold/
+  Random/Pattern/Weird generators from the browser (Python CLI unchanged).
+- Result: held-out lift −4.2% / −3.1% / −2.9% (6/55, 6/45, 5/35), CIs cover 0.
+- Tests: `tests/test_pool.py` (no look-ahead, standardisation, null data,
+  planted hot numbers, planted Markov transition); JS pool == Python pool and
+  per-draw hits (Node).
+- Results vs pool (Phân tích → "Kết quả gần nhất"): each draw with the pool
+  in force before it (published from `data/pool_log.jsonl`, else
+  reconstructed with train-only weights), hits vs expected, score rank of
+  each winning number; summary tiles + winners-by-rank histogram on the
+  held-out period (6/55: 24.4% of winners in pool vs 25.5% random, mean rank
+  28.0 vs 28.0). Pool logging only in CI (`dashboard --log-pool`).
+- K selection made nested (`select_k`: fit w on 70% of the training window,
+  pick K on the remaining 30%, refit) and evaluated with 6 rolling outer
+  folds (`nested_folds`). Pool page: "Chọn K bằng kiểm định chéo nhiều lớp"
+  (pooled OOS lift, K per fold, OOS lift-by-K chart with CIs, fold table).
+  Result: K unstable across folds, no K beats random. Tests: 60.

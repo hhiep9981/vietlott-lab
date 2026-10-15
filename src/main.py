@@ -26,6 +26,11 @@ def main() -> None:
     d.add_argument("--games", nargs="*", choices=list(GAMES))
     d.add_argument("--no-backtest", action="store_true")
     d.add_argument(
+        "--log-pool",
+        action="store_true",
+        help="append the published pools to data/pool_log.jsonl (CI only)",
+    )
+    d.add_argument(
         "--render-only", action="store_true", help="re-render from analysis.json"
     )
 
@@ -62,7 +67,7 @@ def main() -> None:
         if a.render_only:
             render_html()
         else:
-            build(a.games, run_bt=not a.no_backtest)
+            build(a.games, run_bt=not a.no_backtest, log=a.log_pool)
     elif a.cmd == "backtest":
         game = keno_game(a.spot) if a.game == "keno" else GAMES[a.game]
         game = with_jackpots(game, [int(j) for j in a.jackpot or []])
